@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Noto+Sans+Syriac:wght@400;700&family=Noto+Sans+Syriac+Eastern:wght@400;700&family=Noto+Sans+Syriac+Western:wght@400;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --font-aramaic: "Noto Sans Syriac", "Noto Sans", sans-serif;
+  --font-serto: "Noto Sans Syriac Western", "Noto Sans", sans-serif;
+  --font-madnkhaya: "Noto Sans Syriac Eastern", "Noto Sans", sans-serif;
+
+  /* Remap standard tailwind colors to natural tone palette */
+  --color-stone-50: #FAF9F5;
+  --color-stone-100: #F1EDE4;
+  --color-stone-200: #E8E2D9;
+  --color-stone-300: #D6D0C5;
+  --color-stone-400: #8B7355;
+  --color-stone-500: #5E584E;
+  --color-stone-600: #524B42;
+  --color-stone-700: #423D33;
+  --color-stone-800: #3E3831;
+  --color-stone-900: #2D2823;
+  --color-stone-950: #1C1611;
+
+  --color-amber-50: #FAF9F5;
+  --color-amber-100: #F1EDE4;
+  --color-amber-200: #E8E2D9;
+  --color-amber-300: #D6D0C5;
+  --color-amber-400: #8B7355;
+  --color-amber-500: #8B7355;
+  --color-amber-600: #3E3831;
+  --color-amber-700: #8B7355;
+  --color-amber-800: #5E584E;
+  --color-amber-900: #2D2823;
+}
+
+/* Custom RTL animations helper or beautiful scrollbars */
+html, body {
+  background-color: #F9F6F0 !important;
+  font-family: var(--font-sans);
+  color: #423D33;
+}
+
+.font-aramaic {
+  font-family: var(--font-aramaic);
+}
+
+.font-serto {
+  font-family: var(--font-serto);
+}
+
+.font-madnkhaya {
+  font-family: var(--font-madnkhaya);
+}

@@ -1,0 +1,6 @@
+{
+  "name": "LMS Bahasa Aramaik",
+  "description": "Platform pembelajaran interaktif Bahasa Aramaik dengan dukungan ragam font aksara (Estrangelo, Serto, Madnkhaya), audio pelafalan, kuis transliterasi, dan manajemen tugas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

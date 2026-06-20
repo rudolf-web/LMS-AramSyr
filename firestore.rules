@@ -1,0 +1,133 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reuseable Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Only user with verified email rudolflms@gmail.com has global admin access
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == "rudolflms@gmail.com";
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && (request.auth.uid == userId || request.auth.token.email == "rudolflms@gmail.com");
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entities Validations
+    function isValidUser(data) {
+      return data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+          && data.name is string && data.name.size() >= 1 && data.name.size() <= 128
+          && data.email is string && data.email.size() >= 3 && data.email.size() <= 128
+          && data.role is string && (data.role == 'admin' || data.role == 'member')
+          && data.status is string && (data.status == 'approved' || data.status == 'disapproved')
+          && data.motivation is string && data.motivation.size() <= 1000;
+    }
+
+    function isValidMaterial(data) {
+      return data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+          && data.title is string && data.title.size() >= 1 && data.title.size() <= 256
+          && data.level is string && (data.level == 'A1' || data.level == 'A2' || data.level == 'B1')
+          && data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 128
+          && data.description is string && data.description.size() <= 1000
+          && data.content is string && data.content.size() <= 50000;
+    }
+
+    function isValidAssignment(data) {
+      return data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+          && data.title is string && data.title.size() >= 1 && data.title.size() <= 256
+          && data.description is string && data.description.size() <= 5000
+          && data.moduleId is string && data.moduleId.size() >= 1 && data.moduleId.size() <= 128
+          && data.level is string && (data.level == 'A1' || data.level == 'A2' || data.level == 'B1')
+          && data.maxScore is int && data.maxScore >= 0 && data.maxScore <= 100;
+    }
+
+    function isValidSubmission(data) {
+      return data.id is string && data.id.size() >= 1 && data.id.size() <= 128
+          && data.assignmentId is string && data.assignmentId.size() >= 1 && data.assignmentId.size() <= 128
+          && data.studentId is string && data.studentId.size() >= 1 && data.studentId.size() <= 128
+          && data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 128
+          && data.content is string && data.content.size() <= 10000
+          && data.status is string && (data.status == 'pending' || data.status == 'graded');
+    }
+
+    function isValidProgress(data) {
+      return data.memberId is string && data.memberId.size() >= 1 && data.memberId.size() <= 128
+          && data.completedMaterials is list && data.completedMaterials.size() <= 150
+          && data.quizScores is map && data.quizScores.size() <= 150;
+    }
+
+    // Collection Security Setup
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (
+        isAdmin() || (request.auth.uid == userId && incoming().role == 'member' && incoming().status == 'disapproved')
+      );
+      allow update: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (
+        isAdmin() || (request.auth.uid == userId && incoming().role == existing().role && incoming().status == existing().status && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'motivation']))
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /materials/{materialId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isAdmin() && isValidId(materialId) && isValidMaterial(incoming());
+      allow update: if isAdmin() && isValidId(materialId) && isValidMaterial(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /assignments/{assignmentId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isAdmin() && isValidId(assignmentId) && isValidAssignment(incoming());
+      allow update: if isAdmin() && isValidId(assignmentId) && isValidAssignment(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /submissions/{submissionId} {
+      allow get: if isSignedIn() && (isAdmin() || resource.data.studentId == request.auth.uid);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.studentId == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(submissionId) && isValidSubmission(incoming()) && (
+        isAdmin() || (incoming().studentId == request.auth.uid && incoming().status == 'pending')
+      );
+      allow update: if isSignedIn() && isValidId(submissionId) && isValidSubmission(incoming()) && (
+        isAdmin() || 
+        (incoming().diff(existing()).affectedKeys().hasOnly(['status', 'grade', 'feedback']) && isAdmin())
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /progress/{userId} {
+      allow get: if isSignedIn() && (isAdmin() || request.auth.uid == userId);
+      allow list: if isSignedIn() && (isAdmin() || resource.data.memberId == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(userId) && isValidProgress(incoming()) && (
+        isAdmin() || request.auth.uid == userId
+      );
+      allow update: if isSignedIn() && isValidId(userId) && isValidProgress(incoming()) && (
+        isAdmin() || request.auth.uid == userId
+      );
+      allow delete: if isAdmin();
+    }
+  }
+}

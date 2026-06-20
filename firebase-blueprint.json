@@ -1,0 +1,100 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User account registration and syllabus approval status.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "member"] },
+        "status": { "type": "string", "enum": ["approved", "disapproved"] },
+        "motivation": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role", "status", "motivation"]
+    },
+    "Material": {
+      "title": "Material",
+      "description": "Syllabus material data including lessons, quizzes, and scripts.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "level": { "type": "string" },
+        "slug": { "type": "string" },
+        "description": { "type": "string" },
+        "content": { "type": "string" },
+        "letters": { "type": "array" },
+        "quiz": { "type": "object" },
+        "audioRef": { "type": "string" }
+      },
+      "required": ["id", "title", "level", "slug", "description", "content"]
+    },
+    "Assignment": {
+      "title": "Assignment",
+      "description": "Class assignments to assess students' mastery.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "moduleId": { "type": "string" },
+        "level": { "type": "string" },
+        "maxScore": { "type": "number" }
+      },
+      "required": ["id", "title", "description", "moduleId", "level", "maxScore"]
+    },
+    "Submission": {
+      "title": "Submission",
+      "description": "Student task assignment submission for grading review.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "assignmentId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "content": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "graded"] },
+        "grade": { "type": "number" },
+        "feedback": { "type": "string" }
+      },
+      "required": ["id", "assignmentId", "studentId", "studentName", "submittedAt", "content", "status"]
+    },
+    "UserProgress": {
+      "title": "UserProgress",
+      "description": "Student learning tracking and modules progress.",
+      "type": "object",
+      "properties": {
+        "memberId": { "type": "string" },
+        "completedMaterials": { "type": "array" },
+        "quizScores": { "type": "object" },
+        "grades": { "type": "object" }
+      },
+      "required": ["memberId", "completedMaterials", "quizScores"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "System accounts for accessing the material."
+    },
+    "materials/{materialId}": {
+      "schema": "Material",
+      "description": "Educational syllabi contents."
+    },
+    "assignments/{assignmentId}": {
+      "schema": "Assignment",
+      "description": "Homework tasks matching each module."
+    },
+    "submissions/{submissionId}": {
+      "schema": "Submission",
+      "description": "Student answers for module evaluation."
+    },
+    "progress/{userId}": {
+      "schema": "UserProgress",
+      "description": "Personal learning achievements data."
+    }
+  }
+}
