@@ -8,8 +8,12 @@ import {
   ShieldAlert, BookOpen, GraduationCap, LogOut, RefreshCw, 
   User as UserIcon, Shield, Layers, HelpCircle, ListTodo, CloudLightning
 } from 'lucide-react';
-import { auth } from './firebase';
+import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { 
+  collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
+  onSnapshot, query, where 
+} from 'firebase/firestore';
 import { User, Material, Assignment, Submission, FontStyle, UserProgress } from './types';
 import { INITIAL_MATERIALS, INITIAL_QUIZ_QUESTIONS, INITIAL_ASSIGNMENTS } from './data/materials';
 import LoginScreen from './components/LoginScreen';
@@ -43,164 +47,194 @@ export default function App() {
   const [firebaseConnected, setFirebaseConnected] = useState<boolean | null>(null);
   const [syncing, setSyncing] = useState<boolean>(false);
 
-  // Initialize Data & synchronize with localStorage (No Firestore required, keeping sync speed and local reliability)
-  useEffect(() => {
-    async function initializeAndSyncData() {
-      setSyncing(true);
-      try {
-        // --- 1. SYNCING REGISTERED USERS ---
-        const cachedUsers = localStorage.getItem('aramaic_all_users');
-        let currentUsers: User[] = cachedUsers ? JSON.parse(cachedUsers) : [];
-
-        const DEFAULT_USERS: User[] = [
-          {
-            id: 'user_student_1',
-            name: 'Siswa Yusuf (Murid Pemula)',
-            email: 'siswa.yusuf@aramaic.org',
-            password: 'password123',
-            role: 'member',
-            status: 'approved',
-            motivation: 'Ingin mendalami aksara kuno Aramaik dan makna glif di baliknya.'
-          },
-          {
-            id: 'user_demo_public',
-            name: 'Tamu Publik (Demo Eksplorasi)',
-            email: 'demo.publik@aramaic.org',
-            password: 'demopublik123',
-            role: 'member',
-            status: 'approved',
-            motivation: 'Mengeksplorasi secara publik dan merasakan keindahan antarmuka pembelajaran Aramaik secara gratis (Khusus Bab 1).',
-            isDemo: true
-          },
-          {
-            id: 'user_admin',
-            name: 'Rudolf A. Luhukay (Aramaic Scholar)',
-            email: 'rudolflms@gmail.com',
-            password: 'admin',
-            role: 'admin',
-            status: 'approved',
-            motivation: 'Mengajar aksara dan melestarikan warisan linguistik luhur.'
-          }
-        ];
-
-        // Ensure currentUsers contains the demo user even if loaded from older localStorage
-        const hasDemo = currentUsers.some(u => u.email.toLowerCase() === 'demo.publik@aramaic.org');
-        if (!hasDemo && currentUsers.length > 0) {
-          const demoUser = DEFAULT_USERS.find(u => u.email.toLowerCase() === 'demo.publik@aramaic.org');
-          if (demoUser) {
-            currentUsers.push(demoUser);
-            localStorage.setItem('aramaic_all_users', JSON.stringify(currentUsers));
-          }
+  // Seeding initial data to Firestore database if it is empty (running in the background)
+  const seedDatabaseIfNeeded = async () => {
+    try {
+      const DEFAULT_USERS: User[] = [
+        {
+          id: 'user_student_1',
+          name: 'Siswa Yusuf (Murid Pemula)',
+          email: 'siswa.yusuf@aramaic.org',
+          role: 'member',
+          status: 'approved',
+          motivation: 'Ingin mendalami aksara kuno Aramaik dan makna glif di baliknya.'
+        },
+        {
+          id: 'user_demo_public',
+          name: 'Tamu Publik (Demo Eksplorasi)',
+          email: 'demo.publik@aramaic.org',
+          role: 'member',
+          status: 'approved',
+          motivation: 'Mengeksplorasi secara publik dan merasakan keindahan antarmuka pembelajaran Aramaik secara gratis (Khusus Bab 1).',
+          isDemo: true
+        },
+        {
+          id: 'user_admin',
+          name: 'Rudolf A. Luhukay (Aramaic Scholar)',
+          email: 'rudolflms@gmail.com',
+          role: 'admin',
+          status: 'approved',
+          motivation: 'Mengajar aksara dan melestarikan warisan linguistik luhur.'
         }
+      ];
 
-        if (currentUsers.length === 0) {
-          currentUsers = DEFAULT_USERS;
-          localStorage.setItem('aramaic_all_users', JSON.stringify(DEFAULT_USERS));
+      // 1. Check if users are empty
+      const usersSnap = await getDocs(collection(db, 'users'));
+      if (usersSnap.empty) {
+        console.log("Seeding users into Firestore...");
+        for (const u of DEFAULT_USERS) {
+          await setDoc(doc(db, 'users', u.id), u);
         }
-        setUsers(currentUsers);
-
-        // --- 2. SYNCING MATERIALS ---
-        const cachedMaterials = localStorage.getItem('aramaic_materials');
-        let currentMaterials: Material[] = cachedMaterials ? JSON.parse(cachedMaterials) : [];
-        if (currentMaterials.length === 0) {
-          currentMaterials = INITIAL_MATERIALS;
-          localStorage.setItem('aramaic_materials', JSON.stringify(INITIAL_MATERIALS));
-        }
-        setMaterials(currentMaterials);
-
-        // --- 3. SYNCING ASSIGNMENTS ---
-        const cachedAssignments = localStorage.getItem('aramaic_assignments');
-        let currentAssignments: Assignment[] = cachedAssignments ? JSON.parse(cachedAssignments) : [];
-        if (currentAssignments.length === 0) {
-          currentAssignments = INITIAL_ASSIGNMENTS;
-          localStorage.setItem('aramaic_assignments', JSON.stringify(INITIAL_ASSIGNMENTS));
-        }
-        setAssignments(currentAssignments);
-
-        // --- 4. SYNCING TASK SUBMISSIONS ---
-        const cachedSubmissions = localStorage.getItem('aramaic_submissions');
-        let currentSubmissions: Submission[] = cachedSubmissions ? JSON.parse(cachedSubmissions) : [];
-
-        const demoSubmission: Submission = {
-          id: 'sub_demo_1',
-          assignmentId: 'assign_1',
-          studentId: 'user_student_1',
-          studentName: 'Siswa Yusuf (Murid Pemula)',
-          submittedAt: '17 Juni 2026, 18:15',
-          content: 'ܐܒܓܕ — Alaph melambangkan seekor sapi jantan yang berarti kekuatan luhur, Beth melambangkan rumah tempat bernaung, Gamal melambangkan unta penolong melintasi padang gurun gersang, dan Dalath melambangkan pintu gerbang raga.',
-          status: 'pending',
-        };
-
-        if (currentSubmissions.length === 0) {
-          currentSubmissions = [demoSubmission];
-          localStorage.setItem('aramaic_submissions', JSON.stringify([demoSubmission]));
-        }
-        setSubmissions(currentSubmissions);
-
-        setFirebaseConnected(true); // Signifies Firebase client initialized successfully
-      } catch (err) {
-        console.warn('Initialization failed, falling back to cached system localStorage.', err);
-        setFirebaseConnected(false);
-      } finally {
-        setSyncing(false);
       }
+
+      // 2. Check if materials are empty
+      const materialsSnap = await getDocs(collection(db, 'materials'));
+      if (materialsSnap.empty) {
+        console.log("Seeding materials into Firestore...");
+        for (const m of INITIAL_MATERIALS) {
+          await setDoc(doc(db, 'materials', m.id), m);
+        }
+      }
+
+      // 3. Check if assignments are empty
+      const assignmentsSnap = await getDocs(collection(db, 'assignments'));
+      if (assignmentsSnap.empty) {
+        console.log("Seeding assignments into Firestore...");
+        for (const a of INITIAL_ASSIGNMENTS) {
+          await setDoc(doc(db, 'assignments', a.id), a);
+        }
+      }
+
+      // 4. Check if progress is empty
+      const progressSnap = await getDocs(collection(db, 'progress'));
+      if (progressSnap.empty) {
+        console.log("Seeding Yusuf progress into Firestore...");
+        await setDoc(doc(db, 'progress', 'user_student_1'), DEFAULT_PROGRESS);
+      }
+    } catch (err) {
+      console.warn("Error seeding database, perhaps internet offline:", err);
+    }
+  };
+
+  // 1. Initial cached local state loading
+  useEffect(() => {
+    setSyncing(true);
+    try {
+      const cachedUsers = localStorage.getItem('aramaic_all_users');
+      if (cachedUsers) setUsers(JSON.parse(cachedUsers));
+
+      const cachedMaterials = localStorage.getItem('aramaic_materials');
+      if (cachedMaterials) setMaterials(JSON.parse(cachedMaterials));
+
+      const cachedAssignments = localStorage.getItem('aramaic_assignments');
+      if (cachedAssignments) setAssignments(JSON.parse(cachedAssignments));
+
+      const cachedSubmissions = localStorage.getItem('aramaic_submissions');
+      if (cachedSubmissions) setSubmissions(JSON.parse(cachedSubmissions));
+
+      setFirebaseConnected(true);
+    } catch (err) {
+      console.warn("Failed loading cached state:", err);
+      setFirebaseConnected(false);
+    } finally {
+      setSyncing(false);
     }
 
-    initializeAndSyncData();
-
-    // Recover cached active session locally if offline or before auth loads
+    // Recover session locally
     const cachedUser = localStorage.getItem('aramaic_current_user');
     if (cachedUser) {
       const parsedUser = JSON.parse(cachedUser) as User;
       setUser(parsedUser);
       if (parsedUser.role === 'admin' || localStorage.getItem('aramaic_original_user_is_admin') === 'true') {
         setIsOriginallyAdmin(true);
-        localStorage.setItem('aramaic_original_user_is_admin', 'true');
       }
     }
 
-    // Subscribe to Firebase Authentication state updates
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    // Auth state changed listener
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        const cachedUsers = localStorage.getItem('aramaic_all_users');
-        const currentUsers: User[] = cachedUsers ? JSON.parse(cachedUsers) : [];
-        const foundUser = currentUsers.find(u => u.email.toLowerCase() === firebaseUser.email?.toLowerCase());
+        setSyncing(true);
+        try {
+          const email = firebaseUser.email?.toLowerCase() || '';
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDocSnap = await getDoc(userDocRef);
 
-        if (foundUser) {
-          if (foundUser.role === 'member' && foundUser.status !== 'approved') {
-            signOut(auth);
-            setUser(null);
-            localStorage.removeItem('aramaic_current_user');
+          let profile: User | null = null;
+          if (userDocSnap.exists()) {
+            profile = userDocSnap.data() as User;
           } else {
-            setUser(foundUser);
-            localStorage.setItem('aramaic_current_user', JSON.stringify(foundUser));
+            const isRudolf = email === 'rudolflms@gmail.com';
+            const isYusuf = email === 'siswa.yusuf@aramaic.org';
+            const isDemo = email === 'demo.publik@aramaic.org';
+
+            if (isRudolf) {
+              profile = {
+                id: firebaseUser.uid,
+                name: 'Rudolf A. Luhukay (Aramaic Scholar)',
+                email: 'rudolflms@gmail.com',
+                role: 'admin',
+                status: 'approved',
+                motivation: 'Mengajar aksara dan melestarikan warisan linguistik luhur.'
+              };
+              await setDoc(userDocRef, profile);
+              await seedDatabaseIfNeeded(); // Auto-seed if database is empty on admin login
+            } else if (isYusuf) {
+              profile = {
+                id: firebaseUser.uid,
+                name: 'Siswa Yusuf (Murid Pemula)',
+                email: 'siswa.yusuf@aramaic.org',
+                role: 'member',
+                status: 'approved',
+                motivation: 'Ingin mendalami aksara kuno Aramaik dan makna glif di baliknya.'
+              };
+              await setDoc(userDocRef, profile);
+            } else if (isDemo) {
+              profile = {
+                id: firebaseUser.uid,
+                name: 'Tamu Publik (Demo Eksplorasi)',
+                email: 'demo.publik@aramaic.org',
+                role: 'member',
+                status: 'approved',
+                motivation: 'Mengeksplorasi secara publik dan merasakan keindahan antarmuka pembelajaran Aramaik secara gratis (Khusus Bab 1).',
+                isDemo: true
+              };
+              await setDoc(userDocRef, profile);
+            } else {
+              // Custom student registered
+              profile = {
+                id: firebaseUser.uid,
+                name: firebaseUser.displayName || 'Siswa Baru',
+                email: email,
+                role: 'member',
+                status: 'pending',
+                motivation: 'Pendaftaran mandiri.'
+              };
+              await setDoc(userDocRef, profile);
+            }
           }
-        } else {
-          // Check if newly authenticated email is Rudolf (admin)
-          if (firebaseUser.email?.toLowerCase() === 'rudolflms@gmail.com') {
-            const adminUser: User = {
-              id: firebaseUser.uid,
-              name: 'Rudolf A. Luhukay (Aramaic Scholar)',
-              email: 'rudolflms@gmail.com',
-              role: 'admin',
-              status: 'approved',
-            };
-            setUsers(prev => {
-              if (!prev.some(u => u.email.toLowerCase() === 'rudolflms@gmail.com')) {
-                const newList = [...prev, adminUser];
-                localStorage.setItem('aramaic_all_users', JSON.stringify(newList));
-                return newList;
+
+          if (profile) {
+            if (profile.role === 'member' && profile.status !== 'approved') {
+              signOut(auth);
+              setUser(null);
+              localStorage.removeItem('aramaic_current_user');
+            } else {
+              setUser(profile);
+              localStorage.setItem('aramaic_current_user', JSON.stringify(profile));
+              if (profile.role === 'admin') {
+                setIsOriginallyAdmin(true);
+                localStorage.setItem('aramaic_original_user_is_admin', 'true');
               }
-              return prev;
-            });
-            setUser(adminUser);
-            localStorage.setItem('aramaic_current_user', JSON.stringify(adminUser));
+            }
           } else {
-            // Unapproved / unknown user profile loaded from Firebase Auth, log out for safety
             signOut(auth);
             setUser(null);
             localStorage.removeItem('aramaic_current_user');
           }
+        } catch (err) {
+          console.error("Auth profile lookup error:", err);
+        } finally {
+          setSyncing(false);
         }
       } else {
         setUser(null);
@@ -208,8 +242,97 @@ export default function App() {
       }
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, []);
+
+  // 2. Real-time collections sync when user is authenticated
+  useEffect(() => {
+    if (!user) return;
+
+    // Start fetching & listening to collections
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const list: User[] = [];
+      snapshot.forEach(doc => {
+        list.push(doc.data() as User);
+      });
+      if (list.length > 0) {
+        setUsers(list);
+        localStorage.setItem('aramaic_all_users', JSON.stringify(list));
+      }
+    }, (err) => {
+      console.warn("Unsatisfied rules or offline during user fetch: ", err);
+    });
+
+    const unsubMaterials = onSnapshot(collection(db, 'materials'), (snapshot) => {
+      const list: Material[] = [];
+      snapshot.forEach(doc => {
+        list.push(doc.data() as Material);
+      });
+      if (list.length > 0) {
+        setMaterials(list);
+        localStorage.setItem('aramaic_materials', JSON.stringify(list));
+      }
+    }, (err) => {
+      console.warn("Unsatisfied materials rules: ", err);
+    });
+
+    const unsubAssignments = onSnapshot(collection(db, 'assignments'), (snapshot) => {
+      const list: Assignment[] = [];
+      snapshot.forEach(doc => {
+        list.push(doc.data() as Assignment);
+      });
+      if (list.length > 0) {
+        setAssignments(list);
+        localStorage.setItem('aramaic_assignments', JSON.stringify(list));
+      }
+    }, (err) => {
+      console.warn("Unsatisfied assignments rules: ", err);
+    });
+
+    let unsubSubmissions;
+    if (user.role === 'admin' || isOriginallyAdmin) {
+      unsubSubmissions = onSnapshot(collection(db, 'submissions'), (snapshot) => {
+        const list: Submission[] = [];
+        snapshot.forEach(doc => {
+          list.push(doc.data() as Submission);
+        });
+        setSubmissions(list);
+        localStorage.setItem('aramaic_submissions', JSON.stringify(list));
+      }, (err) => {
+        console.warn("Unsatisfied admin submissions: ", err);
+      });
+    } else {
+      const q = query(collection(db, 'submissions'), where('studentId', '==', user.id));
+      unsubSubmissions = onSnapshot(q, (snapshot) => {
+        const list: Submission[] = [];
+        snapshot.forEach(doc => {
+          list.push(doc.data() as Submission);
+        });
+        setSubmissions(list);
+        localStorage.setItem('aramaic_submissions', JSON.stringify(list));
+      }, (err) => {
+        console.warn("Unsatisfied student submissions: ", err);
+      });
+    }
+
+    const unsubProgress = onSnapshot(doc(db, 'progress', user.id), (docSnap) => {
+      if (docSnap.exists()) {
+        const progData = docSnap.data() as UserProgress;
+        setProgress(progData);
+        localStorage.setItem('aramaic_progress', JSON.stringify(progData));
+      }
+    }, (err) => {
+      console.warn("Unsatisfied progress query: ", err);
+    });
+
+    return () => {
+      unsubUsers();
+      unsubMaterials();
+      unsubAssignments();
+      unsubSubmissions();
+      unsubProgress();
+    };
+  }, [user, isOriginallyAdmin]);
 
   // Validate logged in user approval status against latest users list
   useEffect(() => {
@@ -293,25 +416,35 @@ export default function App() {
   };
 
   // CALLBACKS FOR MEMBER/STUDENT ACTIVITIES:
-  const handleCompleteMaterial = (materialId: string) => {
+  const handleCompleteMaterial = async (materialId: string) => {
     if (progress.completedMaterials.includes(materialId)) return;
     const updated = {
       ...progress,
       completedMaterials: [...progress.completedMaterials, materialId],
     };
     updateCachedProgress(updated);
+    try {
+      await setDoc(doc(db, 'progress', user?.id || progress.memberId), updated);
+    } catch (err) {
+      console.error("Firestore progress update error:", err);
+    }
   };
 
-  const handleCompleteLetter = (letterChar: string) => {
+  const handleCompleteLetter = async (letterChar: string) => {
     if (progress.completedLetters.includes(letterChar)) return;
     const updated = {
       ...progress,
       completedLetters: [...progress.completedLetters, letterChar],
     };
     updateCachedProgress(updated);
+    try {
+      await setDoc(doc(db, 'progress', user?.id || progress.memberId), updated);
+    } catch (err) {
+      console.error("Firestore letters progress update error:", err);
+    }
   };
 
-  const handleCompleteQuiz = (quizId: string, scorePercentage: number) => {
+  const handleCompleteQuiz = async (quizId: string, scorePercentage: number) => {
     const updated = {
       ...progress,
       quizScores: {
@@ -320,6 +453,11 @@ export default function App() {
       },
     };
     updateCachedProgress(updated);
+    try {
+      await setDoc(doc(db, 'progress', user?.id || progress.memberId), updated);
+    } catch (err) {
+      console.error("Firestore quiz progress update error:", err);
+    }
   };
 
   const handleSubmitAssignmentAnswer = async (assignmentId: string, answerText: string) => {
@@ -335,6 +473,11 @@ export default function App() {
     const updatedSubmissions = [...submissions, newSubmission];
     setSubmissions(updatedSubmissions);
     localStorage.setItem('aramaic_submissions', JSON.stringify(updatedSubmissions));
+    try {
+      await setDoc(doc(db, 'submissions', newSubmission.id), newSubmission);
+    } catch (err) {
+      console.error("Gagal mengirim jawaban ke Firestore:", err);
+    }
   };
 
   // CALLBACKS FOR ADMIN ACTIONS:
@@ -342,18 +485,33 @@ export default function App() {
     const updated = [...materials, newMat];
     setMaterials(updated);
     localStorage.setItem('aramaic_materials', JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'materials', newMat.id), newMat);
+    } catch (err) {
+      console.error("Firestore add material error:", err);
+    }
   };
 
   const handleEditMaterial = async (editedMat: Material) => {
     const updated = materials.map(m => m.id === editedMat.id ? editedMat : m);
     setMaterials(updated);
     localStorage.setItem('aramaic_materials', JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'materials', editedMat.id), editedMat);
+    } catch (err) {
+      console.error("Firestore edit material error:", err);
+    }
   };
 
   const handleDeleteMaterial = async (materialId: string) => {
     const updated = materials.filter(m => m.id !== materialId);
     setMaterials(updated);
     localStorage.setItem('aramaic_materials', JSON.stringify(updated));
+    try {
+      await deleteDoc(doc(db, 'materials', materialId));
+    } catch (err) {
+      console.error("Firestore delete material error:", err);
+    }
   };
 
   const handleGradeSubmission = async (submissionId: string, gradeValue: number, feedbackText: string) => {
@@ -370,6 +528,14 @@ export default function App() {
     });
     setSubmissions(updated);
     localStorage.setItem('aramaic_submissions', JSON.stringify(updated));
+    try {
+      const targetSub = updated.find(sub => sub.id === submissionId);
+      if (targetSub) {
+        await setDoc(doc(db, 'submissions', submissionId), targetSub);
+      }
+    } catch (err) {
+      console.error("Firestore grading submission error:", err);
+    }
   };
 
   // Session login / logout
@@ -411,12 +577,28 @@ export default function App() {
     const updated = [...users, newUser];
     setUsers(updated);
     localStorage.setItem('aramaic_all_users', JSON.stringify(updated));
+    try {
+      await setDoc(doc(db, 'users', newUser.id), newUser);
+    } catch (err) {
+      console.error("Gagal mendaftarkan pengguna baru ke Firestore:", err);
+    }
   };
 
   const handleUpdateUserStatus = async (userId: string, newStatus: 'approved' | 'disapproved') => {
     const updated = users.map(u => u.id === userId ? { ...u, status: newStatus } : u);
     setUsers(updated);
     localStorage.setItem('aramaic_all_users', JSON.stringify(updated));
+    try {
+      const userRef = doc(db, 'users', userId);
+      const targetUser = updated.find(u => u.id === userId);
+      if (targetUser) {
+        await setDoc(userRef, targetUser);
+      } else {
+        await updateDoc(userRef, { status: newStatus });
+      }
+    } catch (err) {
+      console.error("Gagal memperbarui status pengguna di Firestore:", err);
+    }
   };
 
   const handleResetDatabase = async () => {

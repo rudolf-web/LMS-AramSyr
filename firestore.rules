@@ -39,7 +39,7 @@ service cloud.firestore {
           && data.name is string && data.name.size() >= 1 && data.name.size() <= 128
           && data.email is string && data.email.size() >= 3 && data.email.size() <= 128
           && data.role is string && (data.role == 'admin' || data.role == 'member')
-          && data.status is string && (data.status == 'approved' || data.status == 'disapproved')
+          && data.status is string && (data.status == 'approved' || data.status == 'disapproved' || data.status == 'pending')
           && data.motivation is string && data.motivation.size() <= 1000;
     }
 
@@ -81,7 +81,7 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (
-        isAdmin() || (request.auth.uid == userId && incoming().role == 'member' && incoming().status == 'disapproved')
+        isAdmin() || (request.auth.uid == userId && incoming().role == 'member' && incoming().status == 'pending')
       );
       allow update: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (
         isAdmin() || (request.auth.uid == userId && incoming().role == existing().role && incoming().status == existing().status && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'motivation']))
