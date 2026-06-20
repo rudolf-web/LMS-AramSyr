@@ -8,6 +8,14 @@ export interface User {
   password?: string;
   motivation?: string;
   status?: 'pending' | 'approved' | 'disapproved';
+  isDemo?: boolean;
+}
+
+export interface MaterialResource {
+  id: string;
+  title: string;
+  type: 'video' | 'audio' | 'document' | 'iframe' | 'html' | 'web_link';
+  url: string;
 }
 
 export interface Material {
@@ -19,6 +27,15 @@ export interface Material {
   description: string;
   bodyText?: string; // Full module text
   estimatedMinutes: number;
+  additionalResources?: MaterialResource[];
+  layoutConfig?: {
+    height?: 'small' | 'medium' | 'large' | 'cinema';
+    aspectRatio?: '16:9' | '4:3' | '21:9' | 'auto';
+    borderStyle?: 'none' | 'thin' | 'double' | 'thick';
+    borderColor?: string;
+    gapSize?: 'none' | 'compact' | 'normal' | 'spacious';
+    customIframeHeight?: string;
+  };
 }
 
 export interface Letter {

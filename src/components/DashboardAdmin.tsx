@@ -3,7 +3,7 @@ import {
   Plus, Edit2, Trash2, Check, FileText, Video, Volume2, Globe, Clock, ShieldCheck, Award, MessageSquare, Users, CheckCircle, XCircle, UserCheck, ShieldAlert,
   FileSpreadsheet, FileUp, Sparkles, Code2, Link2, ExternalLink, Columns
 } from 'lucide-react';
-import { Material, Assignment, Submission, FontStyle, User } from '../types';
+import { Material, Assignment, Submission, FontStyle, User, MaterialResource } from '../types';
 
 interface DashboardAdminProps {
   adminName: string;
@@ -46,6 +46,23 @@ export default function DashboardAdmin({
   const [showForm, setShowForm] = useState(false);
   const [uploadNote, setUploadNote] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [isDraggingOverTextarea, setIsDraggingOverTextarea] = useState(false);
+
+  // States for additional media resources
+  const [formAdditionalResources, setFormAdditionalResources] = useState<MaterialResource[]>([]);
+  const [newResourceTitle, setNewResourceTitle] = useState('');
+  const [newResourceType, setNewResourceType] = useState<MaterialResource['type']>('video');
+  const [newResourceUrl, setNewResourceUrl] = useState('');
+  const [newResourceUploadNote, setNewResourceUploadNote] = useState('');
+  const [newResourceUploading, setNewResourceUploading] = useState(false);
+
+  // States for layout configuration (flexible embedding options)
+  const [layoutHeight, setLayoutHeight] = useState<'small' | 'medium' | 'large' | 'cinema'>('cinema');
+  const [layoutAspectRatio, setLayoutAspectRatio] = useState<'16:9' | '4:3' | '21:9' | 'auto'>('16:9');
+  const [layoutBorderStyle, setLayoutBorderStyle] = useState<'none' | 'thin' | 'double' | 'thick'>('thin');
+  const [layoutBorderColor, setLayoutBorderColor] = useState('#E8E2D9');
+  const [layoutGapSize, setLayoutGapSize] = useState<'none' | 'compact' | 'normal' | 'spacious'>('normal');
+  const [layoutCustomIframeHeight, setLayoutCustomIframeHeight] = useState('');
 
   // Grading states
   const [gradingSubmissionId, setGradingSubmissionId] = useState<string | null>(null);
@@ -64,6 +81,20 @@ export default function DashboardAdmin({
     setShowForm(false);
     setUploadNote('');
     setUploading(false);
+    setFormAdditionalResources([]);
+    setNewResourceTitle('');
+    setNewResourceType('video');
+    setNewResourceUrl('');
+    setNewResourceUploadNote('');
+    setNewResourceUploading(false);
+    
+    // reset layout configurations
+    setLayoutHeight('cinema');
+    setLayoutAspectRatio('16:9');
+    setLayoutBorderStyle('thin');
+    setLayoutBorderColor('#E8E2D9');
+    setLayoutGapSize('normal');
+    setLayoutCustomIframeHeight('');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -106,6 +137,15 @@ export default function DashboardAdmin({
       description: formDescription,
       bodyText: formBodyText || undefined,
       estimatedMinutes: Number(formMinutes) || 5,
+      additionalResources: formAdditionalResources.length > 0 ? formAdditionalResources : undefined,
+      layoutConfig: {
+        height: layoutHeight,
+        aspectRatio: layoutAspectRatio,
+        borderStyle: layoutBorderStyle,
+        borderColor: layoutBorderColor,
+        gapSize: layoutGapSize,
+        customIframeHeight: layoutCustomIframeHeight,
+      }
     };
 
     if (isEditing) {
@@ -119,6 +159,61 @@ export default function DashboardAdmin({
     resetForm();
   };
 
+  const handleAddResource = () => {
+    if (!newResourceTitle.trim()) {
+      alert('Judul / Nama Media wajib diisi oleh Admin!');
+      return;
+    }
+    if (!newResourceUrl.trim()) {
+      alert('Silakan isi Tautan / URL sumber alternatif!');
+      return;
+    }
+    const label = newResourceTitle.trim();
+    const newRes: MaterialResource = {
+      id: `res_opt_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      title: label,
+      type: newResourceType,
+      url: newResourceUrl.trim()
+    };
+    setFormAdditionalResources([...formAdditionalResources, newRes]);
+    // reset single input fields
+    setNewResourceTitle('');
+    setNewResourceType('video');
+    setNewResourceUrl('');
+    setNewResourceUploadNote('');
+  };
+
+  const handleRemoveResource = (resId: string) => {
+    setFormAdditionalResources(formAdditionalResources.filter(r => r.id !== resId));
+  };
+
+  const handleSubFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 3.5 * 1024 * 1024) {
+      alert(`⚠️ File terlalu besar: ${(file.size / (1024 * 1024)).toFixed(2)} MB\nDisarankan tautan cloud agar optimal.`);
+      return;
+    }
+
+    setNewResourceUploading(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64String = event.target?.result as string;
+      setNewResourceUrl(base64String);
+      setNewResourceUploadNote(`✅ File Lokal: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
+      if (!newResourceTitle.trim()) {
+        setNewResourceTitle(file.name.replace(/\.[^/.]+$/, ""));
+      }
+      setNewResourceUploading(false);
+    };
+    reader.onerror = () => {
+      alert("Terjadi kesalahan memproses file.");
+      setNewResourceUploading(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleEditClick = (mat: Material) => {
     setIsEditing(mat.id);
     setFormTitle(mat.title);
@@ -129,7 +224,16 @@ export default function DashboardAdmin({
     setFormBodyText(mat.bodyText || '');
     setFormMinutes(mat.estimatedMinutes);
     setUploadNote(mat.contentUrl && mat.contentUrl.startsWith('data:') ? '✅ Berisi dokumen lokal terunggah (Base64)' : '');
+    setFormAdditionalResources(mat.additionalResources || []);
     setShowForm(true);
+
+    // load existing layout modifications
+    setLayoutHeight(mat.layoutConfig?.height || 'cinema');
+    setLayoutAspectRatio(mat.layoutConfig?.aspectRatio || '16:9');
+    setLayoutBorderStyle(mat.layoutConfig?.borderStyle || 'thin');
+    setLayoutBorderColor(mat.layoutConfig?.borderColor || '#E8E2D9');
+    setLayoutGapSize(mat.layoutConfig?.gapSize || 'normal');
+    setLayoutCustomIframeHeight(mat.layoutConfig?.customIframeHeight || '');
   };
 
   const handleDeleteClick = (materialId: string) => {
@@ -331,13 +435,21 @@ export default function DashboardAdmin({
                         className="w-full p-2.5 bg-[#FAF9F5] border border-[#E8E2D9] rounded-xl text-xs focus:outline-none text-[#3E3831] font-mono leading-relaxed"
                       />
                     ) : formType === 'iframe' ? (
-                      <textarea
-                        rows={3}
-                        placeholder='cth: <iframe src="https://assemblrworld.com/edu/embed/..." width="100%" height="400"></iframe> ATAU cukup tempel URL-nya saja'
-                        value={formUrl}
-                        onChange={(e) => setFormUrl(e.target.value)}
-                        className="w-full p-2.5 bg-[#FAF9F5] border border-[#E8E2D9] rounded-xl text-xs focus:outline-none text-[#3E3831] font-mono leading-relaxed"
-                      />
+                      <div className="space-y-2">
+                        <textarea
+                          rows={3}
+                          placeholder='cth: <iframe src="https://assemblrworld.com/edu/embed/..." width="100%" height="400"></iframe> ATAU cukup tempel URL-nya saja'
+                          value={formUrl}
+                          onChange={(e) => setFormUrl(e.target.value)}
+                          className="w-full p-2.5 bg-[#FAF9F5] border border-[#E8E2D9] rounded-xl text-xs focus:outline-none text-[#3E3831] font-mono leading-relaxed"
+                        />
+                        <div className="p-2.5 bg-amber-50/50 border border-[#E8E2D9] rounded-xl text-[10px] text-stone-600 space-y-1 block text-left leading-relaxed">
+                          <span className="font-bold text-[#8B7355] block">💡 Panduan Integrasi Iframe (Rasio Responsif 16:9):</span>
+                          <p>1. <strong>Lebar & Tinggi Maksimal</strong>: Salin kode embed asli apa adanya dari Youtube, Assemblr, GeoGebra, atau Google Slides. Sistem kami otomatis merender dengan aspek rasio 16:9 responsif agar tampak profesional dan tidak terpotong.</p>
+                          <p>2. <strong>Multi-Kombinasi</strong>: Jika menempelkan beberapa tag `&lt;iframe&gt;` sekaligus, sistem akan di-render memanjang ke bawah berurutan dipisahkan oleh garis tipis (sehingga tidak saling tumpang tindih atau menutup satu sama lain).</p>
+                          <p>3. <strong>Saran Link</strong>: Bila menempelkan link mentah tanpa tag iframe, pastikan itu berupa link embed valid agar bisa di-preview tanpa memblokir izin web.</p>
+                        </div>
+                      </div>
                     ) : (
                       <input
                         type="text"
@@ -412,14 +524,363 @@ export default function DashboardAdmin({
 
                 {/* Main Body content module */}
                 <div>
-                  <label className="block text-xs font-bold text-[#8B7355] mb-1">NASKAH PENUH MODUL (MENDUKUNG MULTILINE)</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-[#8B7355]">NASKAH PENUH MODUL (MENDUKUNG MULTILINE)</label>
+                    <span className="text-[9px] bg-[#8B7355]/10 text-[#8B7355] font-mono px-2 py-0.5 rounded font-black">SPASIAL DINAMIS</span>
+                  </div>
                   <textarea
-                    rows={6}
+                    rows={8}
                     placeholder="Sajikan naskah modul pengajaran terperinci. Gunakan simbol Aramaik untuk mendemonstrasikan aksara luhur."
                     value={formBodyText}
                     onChange={(e) => setFormBodyText(e.target.value)}
-                    className="w-full p-2.5 bg-[#FAF9F5] border border-[#E8E2D9] rounded-xl text-xs focus:outline-none text-[#3E3831] font-serif"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDraggingOverTextarea(true);
+                    }}
+                    onDragEnter={(e) => {
+                      e.preventDefault();
+                      setIsDraggingOverTextarea(true);
+                    }}
+                    onDragLeave={() => setIsDraggingOverTextarea(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDraggingOverTextarea(false);
+                      const tag = e.dataTransfer.getData("text/plain");
+                      if (!tag || !tag.startsWith("[media-")) return;
+                      
+                      const textarea = e.currentTarget;
+                      const start = textarea.selectionStart;
+                      const end = textarea.selectionEnd;
+                      const text = formBodyText;
+                      
+                      const before = text.substring(0, start);
+                      const after = text.substring(end, text.length);
+                      
+                      // Inserts media on a clean line
+                      const insertPart = `\n${tag}\n`;
+                      setFormBodyText(before + insertPart + after);
+                      
+                      // Refocus text box
+                      setTimeout(() => {
+                        textarea.focus();
+                        const newPos = start + insertPart.length;
+                        textarea.setSelectionRange(newPos, newPos);
+                      }, 10);
+                    }}
+                    className={`w-full p-3 bg-[#FAF9F5] rounded-xl text-xs focus:outline-none text-[#3E3831] font-serif leading-relaxed transition-all duration-300 ${
+                      isDraggingOverTextarea 
+                        ? 'border-2 border-dashed border-amber-600 ring-4 ring-amber-500/10 scale-[1.01] bg-amber-50/20' 
+                        : 'border border-[#E8E2D9]'
+                    }`}
                   />
+                  
+                  {/* Panduan tata letak media fleksibel */}
+                  <div className="mt-2 p-3 bg-amber-50/50 border border-amber-200/50 rounded-xl text-left space-y-1.5 shadow-3xs">
+                    <div className="flex items-center gap-1.5 text-amber-800">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span className="text-[10px] font-bold uppercase tracking-wider">💡 TIPS FORMAT MEDIA DINAMIS & DI DEKAT TEKS:</span>
+                    </div>
+                    <p className="text-[10px] text-stone-600 leading-relaxed">
+                      Anda dapat menyelipkan kode placeholder di baris naskah mana saja untuk meletakkan media/widget tambahan (dari daftar di bawah) secara interaktif berdampingan dengan isi teks:
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 font-mono text-[9px]">
+                      <div className="bg-white p-2 rounded border border-stone-200/60">
+                        <span className="text-[#8B7355] font-bold block mb-1">📋 ALIANSI KANAN (Float Right)</span>
+                        <code className="bg-stone-50 px-1 py-0.5 text-purple-700 font-bold block text-center rounded">[media-1:right]</code>
+                        <span className="text-[8px] text-stone-500 block mt-1">Sangat rapi, teks mengalir membungkus di sisi kiri media.</span>
+                      </div>
+                      <div className="bg-white p-2 rounded border border-stone-200/60">
+                        <span className="text-[#8B7355] font-bold block mb-1">📋 ALIANSI KIRI (Float Left)</span>
+                        <code className="bg-stone-50 px-1 py-0.5 text-purple-700 font-bold block text-center rounded">[media-1:left]</code>
+                        <span className="text-[8px] text-stone-500 block mt-1 font-sans">Media melayang di kiri, teks membungkus di sisi kanan.</span>
+                      </div>
+                      <div className="bg-white p-2 rounded border border-stone-200/60">
+                        <span className="text-[#8B7355] font-bold block mb-1 font-sans">📋 LEBAR PENUH (Centered)</span>
+                        <code className="bg-stone-50 px-1 py-0.5 text-purple-700 font-bold block text-center rounded">[media-1:center]</code>
+                        <span className="text-[8px] text-stone-500 block mt-1 font-sans">Media besar berada di tengah memutus baris naskah.</span>
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-[#8B7355] italic leading-snug font-sans">
+                      * Ganti angka <code className="bg-stone-100 px-0.5 font-bold font-mono">1</code> dengan nomor urutan media tambahan Anda (contoh: <code className="bg-stone-100 px-0.5 font-bold font-mono">[media-2:right]</code>). Pembatas dan sisa media yang tidak dipanggil di teks akan otomatis ditampilkan di bagian bawah secara tradisional.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Opsi Spasial & Tata Letak Media */}
+                {(formType === 'video' || formType === 'iframe' || formType === 'html' || formType === 'document' || formType === 'audio') && (
+                  <div className="p-4 bg-stone-50 border border-[#E8E2D9] rounded-2xl block text-left space-y-3">
+                    <div className="flex items-center gap-1.5 border-b border-[#E8E2D9] pb-2">
+                      <Sparkles className="w-4 h-4 text-[#8B7355] shrink-0" />
+                      <span className="text-xs font-bold text-[#8B7355] uppercase tracking-wider">🛠️ Opsi Spasial & Tata Letak Media (Fleksibel)</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Tinggi Area */}
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-stone-600 mb-1">TINGGI BINDING FRAME</label>
+                        <select
+                          value={layoutHeight}
+                          onChange={(e: any) => setLayoutHeight(e.target.value)}
+                          className="w-full p-2 bg-white border border-[#E8E2D9] rounded-lg text-xs text-stone-800 focus:outline-none"
+                        >
+                          <option value="cinema">🎥 Aspek Rasio (16:9 Cinema)</option>
+                          <option value="small">📏 Kompak / Kecil (~280px)</option>
+                          <option value="medium">📏 Sedang (~400px)</option>
+                          <option value="large">📏 Besar (~550px)</option>
+                        </select>
+                      </div>
+
+                      {/* Aspek Rasio */}
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-stone-600 mb-1">ASPEK RASIO STANDAR</label>
+                        <select
+                          value={layoutAspectRatio}
+                          onChange={(e: any) => setLayoutAspectRatio(e.target.value)}
+                          className="w-full p-2 bg-white border border-[#E8E2D9] rounded-lg text-xs text-stone-800 focus:outline-none"
+                        >
+                          <option value="16:9">🌅 Lebar Sinematik (16:9)</option>
+                          <option value="4:3">📺 Klasik Box (4:3)</option>
+                          <option value="21:9">🎞️ Ultra-Wide (21:9)</option>
+                          <option value="auto">📦 Bebas (Tergantung Isi)</option>
+                        </select>
+                      </div>
+
+                      {/* Gaya Batas List */}
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-stone-600 mb-1">GAYA GARIS PEMBATAS</label>
+                        <select
+                          value={layoutBorderStyle}
+                          onChange={(e: any) => setLayoutBorderStyle(e.target.value)}
+                          className="w-full p-2 bg-white border border-[#E8E2D9] rounded-lg text-xs text-stone-800 focus:outline-none"
+                        >
+                          <option value="none">🚫 Tanpa Garis</option>
+                          <option value="thin">➖ Garis Tipis (Elegan)</option>
+                          <option value="double">双 Garis Ganda</option>
+                          <option value="thick">⬛ Garis Tebal</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                      {/* Gap Antar Media */}
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-stone-600 mb-1">JARAK / GAP ANTAR MEDIA (MULTI-EMBED)</label>
+                        <select
+                          value={layoutGapSize}
+                          onChange={(e: any) => setLayoutGapSize(e.target.value)}
+                          className="w-full p-2 bg-white border border-[#E8E2D9] rounded-lg text-xs text-stone-800 focus:outline-none"
+                        >
+                          <option value="none">Rapat (Batas nempel)</option>
+                          <option value="compact">Kompak / Sedikit (Gap 12px)</option>
+                          <option value="normal">Normal / Standar (Gap 24px)</option>
+                          <option value="spacious">Lebar / Lapang (Gap 36px)</option>
+                        </select>
+                      </div>
+
+                      {/* Warna Garis Pembatas */}
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-stone-600 mb-1">WARNA GARIS PEMBATAS (TEMA)</label>
+                        <select
+                          value={layoutBorderColor}
+                          onChange={(e) => setLayoutBorderColor(e.target.value)}
+                          className="w-full p-2 bg-white border border-[#E8E2D9] rounded-lg text-xs text-stone-800 focus:outline-none"
+                        >
+                          <option value="#E8E2D9">🟤 Krem Kuno (#E8E2D9)</option>
+                          <option value="#8B7355">🟤 Cokelat Medium (#8B7355)</option>
+                          <option value="#3E3831">⚫ Charcoal Hitam (#3E3831)</option>
+                          <option value="#E5E7EB">⚪ Abu-Abu Terang (#E5E7EB)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="text-[10px] text-[#8B7355] italic pt-1 leading-snug">
+                      💡 Pengaturan di atas membebaskan Admin mengontrol proporsi media agar tampil sempurna di layar siswa, mencegah terjadinya tumpang tindih atau gambar terpotong.
+                    </div>
+                  </div>
+                )}
+
+                {/* Section for multiple alternative elements / additional media files */}
+                <div className="border border-[#E8E2D9] rounded-2xl p-4 sm:p-5 bg-[#FAF9F5]/30 space-y-4">
+                  <div className="flex items-center gap-2 pb-1 border-b border-[#E8E2D9]">
+                    <Sparkles className="w-4.5 h-4.5 text-amber-500" />
+                    <div>
+                      <h5 className="text-xs font-bold text-[#8B7355] uppercase tracking-wider text-left">Multi-Media Alternatif / Tambahan</h5>
+                      <p className="text-[10px] text-stone-500 font-sans text-left">
+                        Sajikan rujukan ekstra untuk para siswa agar mereka memiliki banyak alternatif (Multipel Video Embed, Tautan Web, Audio, File PDF, dsb).
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* List of currently associated resources */}
+                  {formAdditionalResources.length > 0 && (
+                    <div className="bg-white p-3.5 border border-[#E8E2D9] rounded-xl space-y-2">
+                      <span className="text-[11px] font-bold text-stone-600 block text-left">
+                        Media tambahan terdaftar ({formAdditionalResources.length}):
+                      </span>
+                      <p className="text-[10px] text-amber-800 bg-amber-50/70 border border-amber-200/50 p-2 rounded-lg font-sans text-left leading-normal mb-2.5">
+                        🎯 **Fitur Istimewa Admin**: Seret (drag) kartu media di bawah ini dan lepaskan (drop) langsung ke atas baris paragraf pada kotak **NASKAH PENUH MODUL** untuk menempelkan & menyatukan media secara langsung!
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {formAdditionalResources.map((res, index) => (
+                          <div 
+                            key={res.id} 
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData("text/plain", `[media-${index + 1}:right]`);
+                            }}
+                            title="Seret media ini dan jatuhkan pada kotak naskah di atas"
+                            className="bg-[#FAF9F5] hover:bg-[#FAF8F0] border border-stone-200 hover:border-amber-400 rounded-xl p-2.5 flex items-center justify-between gap-3 shadow-3xs cursor-grab active:cursor-grabbing transition-all select-none group"
+                          >
+                            <div className="min-w-0 flex items-center gap-2">
+                              <span className="p-1.5 bg-[#8B7355]/10 text-[#8B7355] rounded-lg text-xxs font-extrabold uppercase shrink-0">
+                                {res.type === 'video' ? '🎥' : res.type === 'audio' ? '🎵' : res.type === 'document' ? '📂' : '🔗'}
+                              </span>
+                              <div className="min-w-0 text-left">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xxs text-stone-500 font-mono block uppercase">{res.type}</span>
+                                  <span className="text-[9px] text-[#8B7355] font-mono font-bold bg-[#8B7355]/5 px-1 rounded">media-{index + 1}</span>
+                                </div>
+                                <span className="text-xs font-bold text-stone-700 block truncate" title={res.title || 'Untitled'}>
+                                  {res.title || 'Untitled'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[8px] text-[#8B7355] bg-stone-100 px-1 py-0.5 rounded border border-stone-200 font-mono font-black group-hover:bg-amber-100 group-hover:text-amber-800 transition-colors uppercase select-none">
+                                ⠿ SERET
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveResource(res.id)}
+                                className="text-stone-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-white transition-colors cursor-pointer shrink-0"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Formulir mini tambah resource */}
+                  <div className="bg-white border border-[#E8E2D9] rounded-xl p-4.5 space-y-3.5">
+                    <span className="text-xxs font-bold text-[#8B7355] uppercase tracking-wider block text-left">
+                      ⚡ Tambah Item Baru ke Daftar Multi-Media
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 text-left">
+                      {/* Name placeholder */}
+                      <div className="sm:col-span-4">
+                        <label className="block text-[10px] font-extrabold text-stone-500 mb-1 uppercase">Label / Nama Media *</label>
+                        <input
+                          type="text"
+                          placeholder="cth: Video Syarah Lengkap"
+                          value={newResourceTitle}
+                          onChange={(e) => setNewResourceTitle(e.target.value)}
+                          className="w-full p-2 bg-[#FAF9F5] border border-[#E8E2D9] rounded-lg text-xs focus:ring-1 focus:ring-[#8B7355]/40 text-[#3E3831] focus:outline-none"
+                        />
+                      </div>
+
+                      {/* Type selector */}
+                      <div className="sm:col-span-4">
+                        <label className="block text-[10px] font-extrabold text-stone-500 mb-1 uppercase">Kategori Media</label>
+                        <select
+                          value={newResourceType}
+                          onChange={(e) => {
+                            setNewResourceType(e.target.value as any);
+                            setNewResourceUploadNote('');
+                          }}
+                          className="w-full p-2 bg-[#FAF9F5] border border-[#E8E2D9] rounded-lg text-xs text-[#3E3831] focus:outline-none font-bold"
+                        >
+                          <option value="video">🎥 Sajian Video YouTube Embed</option>
+                          <option value="audio">🎵 Putaran Audio MP3</option>
+                          <option value="document">📂 Dokumen PDF/Word/Excel/PPT</option>
+                          <option value="iframe">🔗 Embed Iframe / 3D Slideshow</option>
+                          <option value="html">💻 Embed HTML / Widget Kustom</option>
+                          <option value="web_link">🌐 Link / Web Eksternal</option>
+                        </select>
+                      </div>
+
+                      {/* Tautan */}
+                      <div className="sm:col-span-4">
+                        <label className="block text-[10px] font-extrabold text-stone-500 mb-1 uppercase">
+                          {newResourceType === 'iframe' 
+                            ? "MASUKKAN LINK ATAU MATRIKS KODE KUSTOM <IFRAME> (dari Assemblr Edu, Google Slides, dll) *" 
+                            : "Link URL / Embed Code *"
+                          }
+                        </label>
+                        {newResourceType === 'iframe' ? (
+                          <textarea
+                            rows={2}
+                            placeholder='cth: <iframe src="https://assemblrworld.com/edu/embed/..." width="100%" height="400"></iframe> ATAU langsung tempel URL saja'
+                            value={newResourceUrl}
+                            onChange={(e) => setNewResourceUrl(e.target.value)}
+                            className="w-full p-2 bg-[#FAF9F5] border border-[#E8E2D9] rounded-lg text-xs text-[#3E3831] font-mono focus:outline-none leading-relaxed"
+                          />
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Paste HTTP URL, HTML info, atau embed"
+                            value={newResourceUrl}
+                            onChange={(e) => setNewResourceUrl(e.target.value)}
+                            className="w-full p-2 bg-[#FAF9F5] border border-[#E8E2D9] rounded-lg text-xs text-[#3E3831] font-mono focus:outline-none"
+                          />
+                        )}
+                        {newResourceType === 'iframe' && (
+                          <p className="mt-1 text-[9px] text-[#8B7355] block text-left leading-tight">
+                            💡 Salin & tempel kode iframe utuh. Sistem otomatis meresonasi media ke box 16:9 modular terpisah.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Local File Upload option for sub resources too! */}
+                    {(newResourceType === 'document' || newResourceType === 'audio' || newResourceType === 'video') && (
+                      <div className="bg-[#FAF9F5] p-3 rounded-xl border border-stone-150 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-left">
+                        <div className="space-y-0.5">
+                          <span className="text-[10px] font-bold text-stone-700 block flex items-center gap-1">
+                            <FileUp className="w-3.5 h-3.5 text-[#8B7355]" />
+                            Bisa juga unggah file langsung untuk media tambahan (Maks 3.5MB):
+                          </span>
+                        </div>
+                        <label className="px-3.5 py-1 bg-[#8B7355]/15 hover:bg-[#8B7355]/25 text-[#8B7355] rounded-lg text-[10px] font-bold cursor-pointer transition-colors border border-[#8B7355]/20 flex items-center gap-1 active:scale-95 shrink-0 self-end sm:self-auto">
+                          <FileUp className="w-3.5 h-3.5" />
+                          {newResourceUploading ? 'Mengunggah...' : 'Pilih Berkas'}
+                          <input
+                            type="file"
+                            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.mp3,.wav,.png,.jpg,.jpeg,.gif"
+                            onChange={handleSubFileChange}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    )}
+
+                    {newResourceUploadNote && (
+                      <div className="text-[10px] text-emerald-800 bg-emerald-50 rounded px-2.5 py-1.5 font-semibold border border-emerald-250 flex items-center justify-between">
+                        <span>{newResourceUploadNote}</span>
+                        <button
+                          type="button"
+                          onClick={() => { setNewResourceUrl(''); setNewResourceUploadNote(''); }}
+                          className="text-stone-400 hover:text-rose-600 font-extrabold text-[9px] hover:underline"
+                        >
+                          Hapus File
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={handleAddResource}
+                        className="px-4 py-1.5 bg-[#8B7355]/10 hover:bg-[#8B7355]/20 text-[#8B7355] rounded-xl text-xs font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer border border-[#8B7355]/20"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Tambahkan ke Modul
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex justify-end gap-2.5 pt-2">

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Shield, BookOpen, Clock, UserCheck, ShieldAlert, Sparkles, LogIn, Lock, Mail, Clipboard, KeyRound } from 'lucide-react';
 import { User } from '../types';
+import { auth } from '../firebase';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
@@ -27,44 +29,98 @@ export default function LoginScreen({ onLogin, users, onRegister }: LoginScreenP
   const [registerError, setRegisterError] = useState('');
 
   // Handle traditional Login
-  const handleTraditionalLogin = (e: React.FormEvent) => {
+  const handleTraditionalLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
-    if (!loginEmail.trim() || !loginPassword.trim()) {
+    const email = loginEmail.trim();
+    const password = loginPassword;
+
+    if (!email || !password) {
       setLoginError('Silakan masukkan email dan password.');
       return;
     }
 
-    // Lookup user by email in the registered users list
-    const foundUser = users.find(
-      (u) => u.email.toLowerCase() === loginEmail.trim().toLowerCase()
-    );
+    try {
+      // Firebase length check is 6 characters. If they typed 'admin' which is 5 chars,
+      // let's internally use 'admin123' to authenticate seamlessly!
+      let authPassword = password;
+      if (email.toLowerCase() === 'rudolflms@gmail.com' && password === 'admin') {
+        authPassword = 'admin123';
+      }
 
-    if (!foundUser) {
-      setLoginError('Akun dengan email tersebut tidak ditemukan. Silakan lakukan pendaftaran terlebih dahulu.');
-      return;
-    }
+      let userCredential;
+      try {
+        userCredential = await signInWithEmailAndPassword(auth, email, authPassword);
+      } catch (authErr: any) {
+        // If user is a seed / default account (Yusuf or Rudolf) and doesn't exist yet in their new auth project,
+        // automatically register them on their fresh Firebase Auth project in background!
+        if (
+          (email.toLowerCase() === 'siswa.yusuf@aramaic.org' && password === 'password123') ||
+          (email.toLowerCase() === 'demo.publik@aramaic.org' && password === 'demopublik123') ||
+          (email.toLowerCase() === 'rudolflms@gmail.com' && password === 'admin')
+        ) {
+          userCredential = await createUserWithEmailAndPassword(auth, email, authPassword);
+        } else {
+          throw authErr;
+        }
+      }
 
-    if (foundUser.password !== loginPassword) {
-      setLoginError('Password yang Anda masukkan salah.');
-      return;
-    }
+      // Check if user has a profile in the local database
+      const foundUser = users.find(
+        (u) => u.email.toLowerCase() === email.toLowerCase()
+      );
 
-    // Role-based status checking
-    if (foundUser.role === 'member') {
-      if (foundUser.status === 'pending') {
-        setLoginError('📋 Pendaftaran Anda masih dalam status PENDING. Mohon menunggu persetujuan (approval) dari Admin Rudolf sebelum Anda bisa masuk.');
+      if (!foundUser) {
+        // Create an approved profile if they managed to authenticate (or if it's the admin)
+        const isRudolf = email.toLowerCase() === 'rudolflms@gmail.com';
+        const isDemo = email.toLowerCase() === 'demo.publik@aramaic.org';
+        const newResolvedUser: User = {
+          id: userCredential.user.uid,
+          name: isRudolf 
+            ? 'Rudolf A. Luhukay (Aramaic Scholar)' 
+            : isDemo 
+              ? 'Tamu Publik (Demo Eksplorasi)' 
+              : 'Siswa Baru',
+          email: email.toLowerCase(),
+          role: isRudolf ? 'admin' : 'member',
+          status: 'approved',
+          motivation: isDemo 
+            ? 'Mengeksplorasi secara publik dan merasakan keindahan antarmuka pembelajaran Aramaik secara gratis (Khusus Bab 1).'
+            : 'Belajar mandiri via Firebase Auth.',
+          isDemo: isDemo
+        };
+        onRegister(newResolvedUser);
+        onLogin(newResolvedUser);
         return;
       }
-      if (foundUser.status === 'disapproved') {
-        setLoginError('🛑 Mohon maaf, pendaftaran Anda ditolak (DISAPPROVED) oleh Admin Rudolf. Silakan hubungi pengajar.');
-        return;
+
+      // Role-based status checking
+      if (foundUser.role === 'member') {
+        if (foundUser.status === 'pending') {
+          setLoginError('📋 Pendaftaran Anda masih dalam status PENDING. Mohon menunggu persetujuan (approval) dari Admin Rudolf sebelum Anda bisa masuk.');
+          await signOut(auth);
+          return;
+        }
+        if (foundUser.status === 'disapproved') {
+          setLoginError('🛑 Mohon maaf, pendaftaran Anda ditolak (DISAPPROVED) oleh Admin Rudolf. Silakan hubungi pengajar.');
+          await signOut(auth);
+          return;
+        }
+      }
+
+      // Successful login
+      onLogin(foundUser);
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found') {
+        setLoginError('Kombinasi email atau password salah. Silakan periksa kembali atau daftar baru.');
+      } else if (err.code === 'auth/weak-password') {
+        setLoginError('Password minimal harus terdiri dari 6 karakter.');
+      } else {
+        setLoginError(`Gagal Masuk: ${err.message || 'Kesalahan autentikasi.'}`);
       }
     }
-
-    // Successful login
-    onLogin(foundUser);
   };
 
   // Handle Google generic & auto Admin login
@@ -79,7 +135,6 @@ export default function LoginScreen({ onLogin, users, onRegister }: LoginScreenP
 
     // Check if it is specifically rudolflms@gmail.com
     if (trimmedEmail === 'rudolflms@gmail.com') {
-      // Automatically log in as Admin
       const adminUser = users.find((u) => u.email.toLowerCase() === 'rudolflms@gmail.com') || {
         id: 'user_admin',
         name: 'Rudolf A. Luhukay (Aramaic Scholar)',
@@ -89,6 +144,20 @@ export default function LoginScreen({ onLogin, users, onRegister }: LoginScreenP
         motivation: 'Mengajar aksara dan melestarikan warisan linguistik luhur.'
       };
       onLogin(adminUser);
+      return;
+    }
+
+    if (trimmedEmail === 'demo.publik@aramaic.org') {
+      const demoUser = users.find((u) => u.email.toLowerCase() === 'demo.publik@aramaic.org') || {
+        id: 'user_demo_public',
+        name: 'Tamu Publik (Demo Eksplorasi)',
+        email: 'demo.publik@aramaic.org',
+        role: 'member' as const,
+        status: 'approved' as const,
+        motivation: 'Mengeksplorasi secara publik dan merasakan keindahan antarmuka pembelajaran Aramaik secara gratis (Khusus Bab 1).',
+        isDemo: true
+      };
+      onLogin(demoUser);
       return;
     }
 
@@ -119,49 +188,75 @@ export default function LoginScreen({ onLogin, users, onRegister }: LoginScreenP
   };
 
   // Handle Sign-Up submission
-  const handleSignUp = (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegisterError('');
     setRegisterSuccessMsg('');
 
-    if (!regName.trim() || !regEmail.trim() || !regPassword.trim() || !regMotivation.trim()) {
+    const email = regEmail.trim();
+    const password = regPassword;
+    const name = regName.trim();
+    const motivation = regMotivation.trim();
+
+    if (!name || !email || !password || !motivation) {
       setRegisterError('Semua isian formulir wajib diisi.');
       return;
     }
 
-    // Check if email already registered
-    const isEmailTaken = users.some(
-      (u) => u.email.toLowerCase() === regEmail.trim().toLowerCase()
-    );
-
-    if (isEmailTaken) {
-      setRegisterError('Email ini sudah terdaftar. Silakan login atau gunakan email lain.');
+    if (password.length < 6) {
+      setRegisterError('Password minimal harus terdiri dari 6 karakter.');
       return;
     }
 
-    // Create pending user registration
-    const newPendingUser: User = {
-      id: `user_student_${Date.now()}`,
-      name: regName.trim(),
-      email: regEmail.trim().toLowerCase(),
-      password: regPassword,
-      role: 'member',
-      status: 'pending', // Waiting for Admin Rudolf's approval
-      motivation: regMotivation.trim(),
-    };
+    try {
+      // 1. Create User in Firebase Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
 
-    onRegister(newPendingUser);
-    
-    // Clear registration fields
-    setRegName('');
-    setRegEmail('');
-    setRegPassword('');
-    setRegMotivation('');
-    
-    setRegisterSuccessMsg(
-      '🎉 PENDAFTARAN BERHASIL! Data Anda telah terkirim ke sistem. Akun Anda saat ini berstatus PENDING dan sedang menunggu peninjauan/persetujuan (approval) dari Admin Rudolf. Silakan cek berkala halaman ini untuk masuk.'
-    );
+      // 2. Create local pending profile linked to Firebase UID
+      const isRudolf = email.toLowerCase() === 'rudolflms@gmail.com';
+      const newPendingUser: User = {
+        id: userCredential.user.uid,
+        name: name,
+        email: email.toLowerCase(),
+        role: isRudolf ? 'admin' : 'member',
+        status: isRudolf ? 'approved' : 'pending',
+        motivation: motivation,
+      };
+
+      onRegister(newPendingUser);
+      
+      // Clear registration fields
+      setRegName('');
+      setRegEmail('');
+      setRegPassword('');
+      setRegMotivation('');
+      
+      if (isRudolf) {
+        setRegisterSuccessMsg(
+          '🎉 PENDAFTARAN BERHASIL! Anda terdaftar sebagai Admin Rudolf. Silakan login untuk mengelola sistem.'
+        );
+      } else {
+        setRegisterSuccessMsg(
+          '🎉 PENDAFTARAN BERHASIL! Data Anda telah terkirim ke Firebase Auth & Sistem Lokal. Akun Anda saat ini berstatus PENDING dan sedang menunggu peninjauan/persetujuan (approval) dari Admin Rudolf. Silakan cek berkala halaman ini untuk masuk.'
+        );
+      }
+      
+      // Auto sign out to prevent auto-login of pending user
+      await signOut(auth);
+    } catch (err: any) {
+      console.error(err);
+      if (err.code === 'auth/email-already-in-use') {
+        setRegisterError('Email ini sudah terdaftar di Firebase Auth. Silakan login atau gunakan email lain.');
+      } else if (err.code === 'auth/invalid-email') {
+        setRegisterError('Format email tidak valid.');
+      } else if (err.code === 'auth/weak-password') {
+        setRegisterError('Password terlalu lemah. Minimal terdiri dari 6 karakter.');
+      } else {
+        setRegisterError(`Gagal Mendaftar: ${err.message || 'Terjadi kesalahan.'}`);
+      }
+    }
   };
+
 
   return (
     <div id="login-screen-bg" className="min-h-screen flex items-center justify-center bg-[#F9F6F0] py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">

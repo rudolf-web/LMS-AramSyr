@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   BookOpen, Award, Layers, Volume2, Video, 
   FileText, CheckCircle, Clock, Send, Sparkles, Check, Play, ChevronRight, RefreshCw, PenTool,
-  Printer, X, ExternalLink, Lock, Eye, AlertTriangle, Columns, Code2
+  Printer, X, ExternalLink, Lock, Eye, AlertTriangle, Columns, Code2, ChevronDown,
+  MessageSquare, Bot
 } from 'lucide-react';
 import { 
   Letter, Material, Assignment, Submission, QuizQuestion, FontStyle, UserProgress 
@@ -13,6 +14,178 @@ import { getBiblicalPassage, getModuleQuestions, ModuleQuestion } from '../data/
 import CanvasTracer from './CanvasTracer';
 import AramaicKeyboard from './AramaicKeyboard';
 import WhiteboardAramaic from './WhiteboardAramaic';
+
+// Helper function to render body text with flexible media layouts
+function renderBodyTextWithMedia(bodyText: string, resources: any[]) {
+  if (!resources || resources.length === 0) {
+    return {
+      nodes: (
+        <div className="whitespace-pre-line text-xs leading-relaxed font-serif text-stone-700">
+          {bodyText}
+        </div>
+      ),
+      renderedInlineIds: new Set<string>()
+    };
+  }
+
+  // Regex to match tags like: [media-1], [media-2:left], [media-3:right], [media-3:center], etc.
+  const regex = /(\[media-\d+(?::(?:left|right|center|full))?\])/gi;
+  const parts = bodyText.split(regex);
+  const renderedInlineIds = new Set<string>();
+
+  const nodes = parts.map((part, index) => {
+    const match = part.match(/\[media-(\d+)(?::([a-zA-Z]+))?\]/i);
+    if (match) {
+      const resourceIndex = parseInt(match[1], 10) - 1; // 1-based index to 0-based
+      const alignment = (match[2] || 'center').toLowerCase();
+
+      if (resourceIndex >= 0 && resourceIndex < resources.length) {
+        const res = resources[resourceIndex];
+        renderedInlineIds.add(res.id);
+
+        let alignClass = "w-full my-6 clear-both"; // Center alignment by default
+        if (alignment === 'left') {
+          alignClass = "float-left md:w-1/2 w-full mr-5 mb-5 mt-1.5 clear-left";
+        } else if (alignment === 'right') {
+          alignClass = "float-right md:w-1/2 w-full ml-5 mb-5 mt-1.5 clear-right";
+        }
+
+        return (
+          <div 
+            key={`inline-res-${index}`} 
+            className={`${alignClass} select-none relative z-10 non-prose`}
+            id={`res-inline-${res.id}`}
+          >
+            {/* Elegant container card for inline resource */}
+            <div className="bg-white border text-left border-[#E8E2D9] rounded-2xl p-4.5 space-y-4 shadow-3xs relative overflow-hidden">
+              
+              {/* Flexible visual banner */}
+              <div className="flex items-center justify-between border-b border-[#E8E2D9] pb-2 flex-wrap gap-1.5">
+                <span className="text-[9px] font-mono font-black text-[#8B7355] uppercase tracking-wider block">
+                  {res.type === 'video' ? '📺 VIDEO' : res.type === 'audio' ? '🎵 AUDIO' : res.type === 'document' ? '📂 DOKUMEN' : res.type === 'iframe' ? '🔗 EMBED' : res.type === 'html' ? '💻 WIDGET' : '🌐 LINK'}
+                </span>
+                <span className="text-[8px] bg-[#8B7355]/10 text-[#8B7355] px-2 py-0.5 rounded font-mono font-extrabold uppercase">
+                  {alignment}
+                </span>
+              </div>
+              
+              <h5 className="text-[11px] font-bold text-stone-700 tracking-wide">{res.title}</h5>
+
+              {/* Video */}
+              {res.type === 'video' && res.url && (
+                <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black shadow-3xs [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:!w-full [&_iframe]:!h-full [&_iframe]:!border-0">
+                  {res.url.trim().startsWith('<iframe') ? (
+                    <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: res.url }} />
+                  ) : (
+                    <iframe
+                      src={res.url}
+                      title={res.title}
+                      className="w-full h-full"
+                      allowFullScreen
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Audio */}
+              {res.type === 'audio' && res.url && (
+                <div className="bg-[#FAF9F5] p-2.5 rounded-xl border border-[#E8E2D9] flex items-center gap-2 max-w-full shadow-4xs">
+                  <div className="p-1.5 bg-[#8B7355]/15 text-[#8B7355] rounded-full shrink-0">
+                    <Volume2 className="w-3.5 h-3.5 animate-pulse" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <audio controls src={res.url} className="w-full focus:outline-none text-xs scale-90" />
+                  </div>
+                </div>
+              )}
+
+              {/* Document */}
+              {res.type === 'document' && res.url && (
+                <div className="flex flex-col gap-2 bg-[#FAF9F5]/70 p-2.5 rounded-xl border border-[#E8E2D9] w-full shadow-4xs text-left">
+                  <div className="min-w-0 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span className="text-[10px] font-bold text-stone-700 truncate block">{res.title}</span>
+                  </div>
+                  <a
+                    href={res.url}
+                    download={res.url.startsWith('data:') ? res.title : undefined}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full text-center py-1.5 bg-[#8B7355] hover:bg-[#5E584E] text-white rounded-lg text-[9px] font-bold transition-all active:scale-95 cursor-pointer block"
+                  >
+                    Buka / Unduh Dokumen
+                  </a>
+                </div>
+              )}
+
+              {/* Iframe */}
+              {res.type === 'iframe' && res.url && (() => {
+                const isRawIframe = res.url.trim().startsWith('<iframe') || res.url.trim().includes('<iframe');
+                let iframeBlocks: string[] = [];
+                if (isRawIframe) {
+                  const regex = /<iframe[\s\S]*?<\/iframe>/gi;
+                  iframeBlocks = res.url.match(regex) || [res.url];
+                } else {
+                  iframeBlocks = [res.url];
+                }
+                return (
+                  <div className="w-full flex flex-col gap-2">
+                    {iframeBlocks.map((iframeMarkup, idx) => (
+                      <div key={idx} className="relative w-full aspect-video bg-black rounded-xl overflow-hidden border border-[#E8E2D9] shadow-4xs [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:!w-full [&_iframe]:!h-full [&_iframe]:!border-0">
+                        {isRawIframe ? (
+                          <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: iframeMarkup }} />
+                        ) : (
+                          <iframe src={iframeMarkup} title={res.title} className="w-full h-full" allowFullScreen />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {/* HTML */}
+              {res.type === 'html' && res.url && (
+                <div className="w-full p-2.5 rounded-lg bg-[#FAF9F5] border border-[#E8E2D9] shadow-inner text-[11px] text-stone-800 leading-relaxed overflow-x-auto">
+                  <div dangerouslySetInnerHTML={{ __html: res.url }} />
+                </div>
+              )}
+
+              {/* Web link */}
+              {res.type === 'web_link' && res.url && (
+                <div className="flex flex-col gap-2 bg-[#FAF9F5]/70 p-2.5 rounded-xl border border-[#E8E2D9] w-full shadow-4xs text-left">
+                  <div className="min-w-0 flex items-center gap-1.5">
+                    <ExternalLink className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span className="text-[10px] font-bold text-stone-700 truncate block">{res.title}</span>
+                  </div>
+                  <a
+                    href={res.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full text-center py-1.5 bg-[#8B7355] hover:bg-[#5E584E] text-white rounded-lg text-[9px] font-bold transition-all active:scale-95 cursor-pointer block"
+                  >
+                    Buka Tautan Eksternal
+                  </a>
+                </div>
+              )}
+
+            </div>
+          </div>
+        );
+      }
+    }
+
+    return <span key={`text-${index}`} className="whitespace-pre-wrap">{part}</span>;
+  });
+
+  return {
+    nodes: (
+      <div className="flow-root font-serif text-stone-700 leading-relaxed text-xs">
+        {nodes}
+      </div>
+    ),
+    renderedInlineIds
+  };
+}
 
 interface DashboardStudentProps {
   studentName: string;
@@ -28,6 +201,7 @@ interface DashboardStudentProps {
   onCompleteMaterial: (materialId: string) => void;
   onCompleteLetter: (letterChar: string) => void;
   onCompleteQuiz: (quizId: string, score: number) => void;
+  isDemo?: boolean;
 }
 
 export default function DashboardStudent({
@@ -44,6 +218,7 @@ export default function DashboardStudent({
   onCompleteMaterial,
   onCompleteLetter,
   onCompleteQuiz,
+  isDemo = false,
 }: DashboardStudentProps) {
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'letters' | 'materials' | 'quiz' | 'assignments' | 'profile' | 'whiteboard'>('dashboard');
@@ -104,6 +279,73 @@ export default function DashboardStudent({
   // Keyboard state for typing assignments
   const [activeAssignmentId, setActiveAssignmentId] = useState<string | null>(null);
   const [assignmentTypingAnswers, setAssignmentTypingAnswers] = useState<{ [id: string]: string }>({});
+
+  // Chatbot Assistant AI states
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'model'; content: string }[]>([
+    {
+      role: 'model',
+      content: 'Shlama! Halo! Selamat datang di Platform Belajar Aramaik. Saya adalah **Asisten AI Aramaik Suryani** yang didukung oleh Gemini.\n\nBagaimana saya bisa membantu Anda hari ini? Anda dapat menanyakan tentang kosa kata, tata bahasa, cara pengucapan abjad, sejarah dialek, atau meminta terjemahan kalimat!'
+    }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+
+  const chatBottomRef = React.useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    if (chatBottomRef.current) {
+      chatBottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, isChatOpen]);
+
+  const handleSendChatMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const query = chatInput.trim();
+    if (!query || isChatLoading) return;
+
+    // Append user message
+    const updatedMessages = [...chatMessages, { role: 'user' as const, content: query }];
+    setChatMessages(updatedMessages);
+    setChatInput('');
+    setIsChatLoading(true);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: query,
+          history: updatedMessages.slice(0, -1), // Send history context
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setChatMessages(prev => [...prev, { role: 'model', content: data.reply }]);
+      } else {
+        setChatMessages(prev => [
+          ...prev, 
+          { 
+            role: 'model', 
+            content: `⚠️ Gagal memproses permintaan: ${data.error || 'Terjadi masalah koneksi.'}` 
+          }
+        ]);
+      }
+    } catch (err: any) {
+      setChatMessages(prev => [
+        ...prev, 
+        { 
+          role: 'model', 
+          content: `⚠️ Gangguan Koneksi: Pastikan server backend Anda online. Error: ${err.message || err}` 
+        }
+      ]);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
 
   const handleSubmitModuleQuiz = (materialId: string, questions: ModuleQuestion[]) => {
     let correctCount = 0;
@@ -256,6 +498,10 @@ export default function DashboardStudent({
   };
 
   const handleSendAssignment = (assignmentId: string) => {
+    if (isDemo) {
+      alert('🔒 Mode Tamu Publik Terbatas:\nAkun Contoh/Demo tidak dapat mengirimkan tugas secara resmi ke database Admin. Silakan buat akun pribadi gratis untuk mencoba fitur peninjauan tugas manual oleh Rudolf A. Luhukay!');
+      return;
+    }
     const answer = assignmentTypingAnswers[assignmentId] || '';
     if (!answer.trim()) return;
     onSubmitAssignment(assignmentId, answer);
@@ -723,10 +969,14 @@ export default function DashboardStudent({
               })
               .map((mat) => {
                 const absoluteIndex = materials.findIndex((m) => m.id === mat.id);
-                const isUnlocked = absoluteIndex === 0 || (progress.quizScores[`module_quiz_${materials[absoluteIndex - 1].id}`] || 0) >= 70;
+                const isUnlocked = absoluteIndex === 0 || (!isDemo && ((progress.quizScores[`module_quiz_${materials[absoluteIndex - 1].id}`] || 0) >= 70));
                 const isCompleted = progress.completedMaterials.includes(mat.id);
                 const quizScore = progress.quizScores[`module_quiz_${mat.id}`] || 0;
                 const isPassed = quizScore >= 70;
+
+                const parsedBody = mat.bodyText 
+                  ? renderBodyTextWithMedia(mat.bodyText, mat.additionalResources || []) 
+                  : null;
 
                 if (!isUnlocked) {
                   const prevModule = materials[absoluteIndex - 1];
@@ -806,183 +1056,445 @@ export default function DashboardStudent({
                       {mat.description}
                     </p>
 
-                    {/* Embeds based on material type */}
-                    {mat.type === 'video' && mat.contentUrl && (
-                      <div className="aspect-video w-full max-w-2xl mx-auto rounded-xl overflow-hidden border border-stone-200 bg-black shadow-md mt-2">
-                        {mat.contentUrl.trim().startsWith('<iframe') ? (
-                          <div 
-                            className="w-full h-full"
-                            dangerouslySetInnerHTML={{ __html: mat.contentUrl }}
-                          />
-                        ) : (
-                          <iframe
-                            src={mat.contentUrl}
-                            title={mat.title}
-                            className="w-full h-full"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                          />
-                        )}
-                      </div>
-                    )}
-
-                    {mat.type === 'audio' && mat.contentUrl && (
-                      <div className="bg-[#FAF9F5] p-5 rounded-xl border border-[#E8E2D9] flex items-center gap-4 max-w-md mt-2">
-                        <div className="p-3 bg-[#8B7355] text-white rounded-full shrink-0 shadow-sm">
-                          <Volume2 className="w-5 h-5 animate-pulse" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-[10px] text-[#8B7355] font-mono uppercase block font-bold">Audio Pembelajaran Mandiri</span>
-                          <span className="text-xxs text-stone-500 font-bold block truncate mb-1">Cek pengucapan vokal/aksara</span>
-                          <audio controls src={mat.contentUrl} className="w-full mt-1.5 focus:outline-none" />
-                        </div>
-                      </div>
-                    )}
-
-                    {mat.type === 'document' && mat.contentUrl && (
-                      <div className="space-y-4 w-full max-w-3xl mt-2">
-                        {/* If PDF, show on-page preview */}
-                        {mat.contentUrl.includes('.pdf') || mat.contentUrl.startsWith('data:application/pdf') ? (
-                          <div className="w-full border border-[#E8E2D9] rounded-2xl overflow-hidden shadow-xs bg-white">
-                            <div className="p-3 bg-[#FAF9F5] border-b border-[#E8E2D9] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                              <span className="text-[10px] font-bold text-[#3E3831] flex items-center gap-1.5 font-serif uppercase tracking-wide">
-                                <FileText className="w-4 h-4 text-emerald-600 font-bold" />
-                                Reader Dokumen PDF Tersemat
-                              </span>
-                              <a
-                                href={mat.contentUrl}
-                                download={`${mat.title.replace(/\s+/g, '-').slice(0, 30)}.pdf`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[10px] bg-[#8B7355] text-white hover:bg-[#5E584E] px-3.5 py-1.5 font-bold rounded-lg transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
-                              >
-                                Unduh PDF
-                              </a>
-                            </div>
-                            <div className="w-full h-[500px] overflow-hidden bg-stone-100 flex items-center justify-center">
-                              <iframe
-                                src={mat.contentUrl}
-                                title={mat.title}
-                                className="w-full h-full border-0"
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="bg-[#FAF9F5] p-5 rounded-2xl border border-[#E8E2D9] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 max-w-xl">
-                            <div className="flex items-center gap-3.5">
-                              <div className="p-3 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 shadow-2xs">
-                                <FileText className="w-7 h-7" />
-                              </div>
-                              <div className="space-y-0.5">
-                                <span className="text-xs font-bold text-[#3E3831] font-serif block">Bahan Bacaan & Lembar Kerja Siswa</span>
-                                <span className="text-[10px] text-[#5E584E] block">
-                                  {mat.contentUrl.startsWith('data:') ? '📂 Dokumen lokal (Word / Excel / Slide)' : '🔗 Dokumen Web / Tautan Berbagi'}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex gap-2 w-full sm:w-auto justify-end">
-                              <a
-                                href={mat.contentUrl}
-                                download={mat.contentUrl.startsWith('data:') ? 'Modul-Materi' : undefined}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-4 py-2 bg-[#3E3831] hover:bg-[#2D2823] text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 text-center justify-center w-full sm:w-auto shadow-xs"
-                              >
-                                Unduh / Buka Dokumen
-                              </a>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {mat.type === 'iframe' && mat.contentUrl && (
-                      <div className="w-full max-w-3xl rounded-2xl border border-[#E8E2D9] overflow-hidden bg-white shadow-xs mt-2">
-                        <div className="p-3.5 bg-[#FAF9F5] border-b border-[#E8E2D9] flex justify-between items-center text-xs">
-                          <span className="text-[10px] font-bold text-[#8B7355] uppercase font-mono tracking-wide flex items-center gap-1.5">
-                            <Columns className="w-4 h-4 text-[#8B7355]" />
-                            Materi Interaktif Tersemat (iFrame / 3D / Slideshow)
+                    {/* Elegant Isolated Material Media Unit */}
+                    <div className="bg-[#FAF9F5]/40 border border-[#E8E2D9] rounded-2xl p-4 sm:p-6 shadow-3xs space-y-4 relative isolate overflow-hidden clear-both max-w-full">
+                      <div className="flex items-center justify-between border-b border-[#E8E2D9] pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
+                          <span className="text-[10px] font-mono font-extrabold text-[#8B7355] uppercase tracking-wider block text-left">
+                            BAHAN AJAR UTAMA ({mat.type.toUpperCase()})
                           </span>
-                          {!mat.contentUrl.trim().startsWith('<iframe') && (
-                            <a 
-                              href={mat.contentUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-[9px] bg-white border border-[#E8E2D9] md:px-2.5 md:py-1 rounded-md text-[#8B7355] hover:underline font-bold transition-all"
-                            >
-                              Buka Tab Baru
-                            </a>
+                        </div>
+                        <span className="text-[9px] text-stone-400 font-mono">
+                          ID: {mat.id}
+                        </span>
+                      </div>
+
+                      {/* Embeds based on material type */}
+                      {mat.type === 'video' && mat.contentUrl && (
+                        <div className="relative w-full max-w-4xl mx-auto aspect-video rounded-2xl overflow-hidden border border-[#E8E2D9] bg-black shadow-md mt-4 mb-4 relative isolate clear-both [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:!w-full [&_iframe]:!h-full [&_iframe]:!max-w-full [&_iframe]:!max-h-full [&_iframe]:!border-0">
+                          {mat.contentUrl.trim().startsWith('<iframe') ? (
+                            <div 
+                              className="w-full h-full"
+                              dangerouslySetInnerHTML={{ __html: mat.contentUrl }}
+                            />
+                          ) : (
+                            <iframe
+                              src={mat.contentUrl}
+                              title={mat.title}
+                              className="w-full h-full"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
                           )}
                         </div>
-                        {mat.contentUrl.trim().startsWith('<iframe') ? (
+                      )}
+
+                      {mat.type === 'audio' && mat.contentUrl && (
+                        <div className="bg-white p-5 rounded-2xl border border-[#E8E2D9] flex items-center gap-4 max-w-md shadow-3xs relative isolate clear-both mt-4">
+                          <div className="p-3 bg-[#8B7355] text-white rounded-full shrink-0 shadow-sm animate-[pulse_3s_infinite]">
+                            <Volume2 className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-[10px] text-[#8B7355] font-mono uppercase block font-bold text-left">Audio Pembelajaran Mandiri</span>
+                            <span className="text-xxs text-stone-500 font-bold block truncate mb-1 text-left">Cek pelafalan vokal dan aksara</span>
+                            <audio controls src={mat.contentUrl} className="w-full mt-1.5 focus:outline-none" />
+                          </div>
+                        </div>
+                      )}
+
+                      {mat.type === 'document' && mat.contentUrl && (
+                        <div className="space-y-4 w-full max-w-4xl relative isolate clear-both mt-4">
+                          {/* If PDF, show on-page preview */}
+                          {mat.contentUrl.includes('.pdf') || mat.contentUrl.startsWith('data:application/pdf') ? (
+                            <div className="w-full border border-[#E8E2D9] rounded-2xl overflow-hidden shadow-xs bg-white">
+                              <div className="p-3 bg-[#FAF9F5] border-b border-[#E8E2D9] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                <span className="text-[10px] font-bold text-[#3E3831] flex items-center gap-1.5 font-serif uppercase tracking-wide">
+                                  <FileText className="w-4 h-4 text-emerald-600 font-bold" />
+                                  Reader Dokumen PDF Tersemat
+                                </span>
+                                <a
+                                  href={mat.contentUrl}
+                                  download={`${mat.title.replace(/\s+/g, '-').slice(0, 30)}.pdf`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[10px] bg-[#8B7355] text-white hover:bg-[#5E584E] px-3.5 py-1.5 font-bold rounded-lg transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                                >
+                                  Unduh PDF
+                                </a>
+                              </div>
+                              <div className="relative w-full aspect-video overflow-hidden bg-stone-100">
+                                <iframe
+                                  src={mat.contentUrl}
+                                  title={mat.title}
+                                  className="absolute inset-0 w-full h-full border-0"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-white p-5 rounded-2xl border border-[#E8E2D9] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 max-w-xl shadow-3xs">
+                              <div className="flex items-center gap-3.5">
+                                <div className="p-3 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-100 shadow-2xs">
+                                  <FileText className="w-7 h-7" />
+                                </div>
+                                <div className="space-y-0.5 text-left">
+                                  <span className="text-xs font-bold text-[#3E3831] font-serif block">Bahan Bacaan & Lembar Kerja Siswa</span>
+                                  <span className="text-[10px] text-[#5E584E] block">
+                                    {mat.contentUrl.startsWith('data:') ? '📂 Dokumen lokal (Word / Excel / Slide)' : '🔗 Dokumen Web / Tautan Berbagi'}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex gap-2 w-full sm:w-auto justify-end">
+                                <a
+                                  href={mat.contentUrl}
+                                  download={mat.contentUrl.startsWith('data:') ? 'Modul-Materi' : undefined}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-4 py-2 bg-[#3E3831] hover:bg-[#2D2823] text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 text-center justify-center w-full sm:w-auto shadow-xs"
+                                >
+                                  Unduh / Buka Dokumen
+                                </a>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {mat.type === 'iframe' && mat.contentUrl && (() => {
+                        const isRawIframe = mat.contentUrl.trim().startsWith('<iframe') || mat.contentUrl.trim().includes('<iframe');
+                        
+                        let iframeBlocks: string[] = [];
+                        if (isRawIframe) {
+                          const regex = /<iframe[\s\S]*?<\/iframe>/gi;
+                          iframeBlocks = mat.contentUrl.match(regex) || [mat.contentUrl];
+                        } else {
+                          iframeBlocks = [mat.contentUrl];
+                        }
+
+                        // Extract layout configuration options
+                        const layoutH = mat.layoutConfig?.height || 'cinema';
+                        const layoutRatio = mat.layoutConfig?.aspectRatio || '16:9';
+                        const layoutStyle = mat.layoutConfig?.borderStyle || 'thin';
+                        const layoutColor = mat.layoutConfig?.borderColor || '#E8E2D9';
+                        const layoutGap = mat.layoutConfig?.gapSize || 'normal';
+
+                        // Set ratio classes
+                        let ratioClass = 'aspect-video';
+                        if (layoutRatio === '4:3') ratioClass = 'aspect-[4/3]';
+                        else if (layoutRatio === '21:9') ratioClass = 'aspect-[21/9]';
+                        else if (layoutRatio === 'auto' || layoutH !== 'cinema') ratioClass = '';
+
+                        // Set container height if not strictly aspect-ratio bound
+                        let containerHeightStyle: React.CSSProperties = {};
+                        if (layoutH === 'small') containerHeightStyle = { height: '280px' };
+                        else if (layoutH === 'medium') containerHeightStyle = { height: '400px' };
+                        else if (layoutH === 'large') containerHeightStyle = { height: '550px' };
+
+                        // Border styling around frames
+                        let frameBorderClass = 'border';
+                        if (layoutStyle === 'none') frameBorderClass = 'border-0';
+                        else if (layoutStyle === 'double') frameBorderClass = 'border-4 border-double';
+                        else if (layoutStyle === 'thick') frameBorderClass = 'border-4';
+
+                        // Gap values
+                        let innerGapClass = 'gap-6';
+                        let ptClass = 'pt-6';
+                        if (layoutGap === 'none') {
+                          innerGapClass = 'gap-0';
+                          ptClass = 'pt-0';
+                        } else if (layoutGap === 'compact') {
+                          innerGapClass = 'gap-3';
+                          ptClass = 'pt-3';
+                        } else if (layoutGap === 'spacious') {
+                          innerGapClass = 'gap-9';
+                          ptClass = 'pt-9';
+                        }
+
+                        return (
+                          <div className="w-full max-w-4xl rounded-2xl border border-[#E8E2D9] overflow-hidden bg-white shadow-xs mt-4 mb-4 relative isolate clear-both text-left">
+                            <div className="p-3.5 bg-[#FAF9F5] border-b border-[#E8E2D9] flex justify-between items-center text-xs">
+                              <span className="text-[10px] font-bold text-[#8B7355] uppercase font-mono tracking-wide flex items-center gap-1.5">
+                                <Columns className="w-4 h-4 text-[#8B7355]" />
+                                Materi Interaktif Tersemat (iFrame / 3D / Slideshow)
+                              </span>
+                              {!isRawIframe && (
+                                <a 
+                                  href={mat.contentUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-[9px] bg-white border border-[#E8E2D9] px-2.5 py-1 rounded-md text-[#8B7355] hover:underline font-bold transition-all"
+                                >
+                                  Buka Tab Baru
+                                </a>
+                              )}
+                            </div>
+
+                            {/* Instruksi Interaktif untuk Siswa */}
+                            <div className="p-3.5 bg-amber-50/40 border-b border-[#E8E2D9] text-[10px] text-stone-600 block text-left space-y-1.5 leading-relaxed">
+                              <span className="font-extrabold text-[#8B7355] block flex items-center gap-1">
+                                <Sparkles className="w-4 h-4 text-[#8B7355] shrink-0" />
+                                INSTRUKSI INTERAKSI & PENGATURAN TAMPILAN:
+                              </span>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                  <p>• <strong>Bila Tampilan Terpotong:</strong> Lakukan gerakan <strong>mencubit layar (pinch-to-zoom OUT)</strong> pada ponsel, atau gunakan scroll <strong>roda tetikus (mouse wheel)</strong> pada laptop untuk memperkecil/mengatur porsi bidang lembar 3D agar terlihat penuh.</p>
+                                  <p>• <strong>Navigasi 360-Derajat:</strong> Klik/sentuh lalu <strong>seret (gesture drag)</strong> melingkar untuk berputar melihat bentuk huruf/peta kuno dari berbagai perspektif.</p>
+                                </div>
+                                <div className="space-y-1">
+                                  <p>• <strong>Proporsional Responsif:</strong> Format presentasi di-render responsif sesuai aspek rasio (seperti {layoutRatio === 'auto' ? 'Bebas' : layoutRatio}) agar lebar-tinggi tampak natural.</p>
+                                  <p>• <strong>Pemisah Modular:</strong> Setiap media disajikan dalam panel mandiri dipisahkan garis pembatas tipis sehingga tidak tumpang tindih.</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className={`p-4 sm:p-5 flex flex-col ${innerGapClass} bg-stone-50/50`}>
+                              {iframeBlocks.map((iframeMarkup, idx) => {
+                                return (
+                                  <div 
+                                    key={idx} 
+                                    className={`${idx > 0 && layoutGap !== 'none' ? ptClass + ' border-t border-stone-200' : ''} flex flex-col gap-3`}
+                                  >
+                                    {iframeBlocks.length > 1 && (
+                                      <div className="flex justify-between items-center bg-white border border-[#E8E2D9] px-3 py-1.5 rounded-lg text-[10px] font-bold text-[#8B7355]">
+                                        <span>🔗 Media Pendukung Tersemat #{idx + 1}</span>
+                                        <span className="text-[8px] bg-stone-100 text-[#8B7355] px-2 py-0.5 rounded font-mono font-black">{layoutRatio === 'auto' ? 'AUTO' : layoutRatio} SCREEN</span>
+                                      </div>
+                                    )}
+
+                                    <div 
+                                      className={`relative w-full bg-black rounded-2xl overflow-hidden ${ratioClass} ${frameBorderClass} shadow-xs relative isolate clear-both [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:!w-full [&_iframe]:!h-full [&_iframe]:!max-w-full [&_iframe]:!max-h-full [&_iframe]:!border-0`}
+                                      style={{ borderColor: layoutColor, ...containerHeightStyle }}
+                                    >
+                                      {isRawIframe ? (
+                                        <div 
+                                          className="w-full h-full"
+                                          dangerouslySetInnerHTML={{ __html: iframeMarkup }} 
+                                        />
+                                      ) : (
+                                        <iframe 
+                                          src={iframeMarkup} 
+                                          className="w-full h-full" 
+                                          allowFullScreen 
+                                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; xr-spatial-tracking"
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            <div className="p-3.5 bg-[#FAF8F3] border-t border-[#E8E2D9] text-[10px] text-stone-500 font-sans italic text-left leading-relaxed">
+                              💡 <strong>Interaksi Aktif:</strong> Anda dapat menggeser, memutar, atau memperbesar pemutar interaktif di atas menggunakan gestur sentuhan atau tetikus secara langsung.
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {mat.type === 'html' && mat.contentUrl && (
+                        <div className="w-full max-w-3xl p-4 sm:p-5 rounded-2xl bg-white border border-[#E8E2D9] space-y-3.5 mt-2 shadow-inner text-left relative isolate clear-both">
+                          <div className="flex items-center gap-2 border-b border-[#E8E2D9] pb-2">
+                            <span className="text-[10px] font-mono text-purple-700 bg-purple-50 border border-purple-200/50 rounded-lg px-2.5 py-1 font-bold uppercase inline-block flex items-center gap-1">
+                              <Code2 className="w-3.5 h-3.5" />
+                              Aplikasi Simulasi Aramaik-Syriac Tersemat
+                            </span>
+                          </div>
                           <div 
-                            className="w-full overflow-hidden flex justify-center bg-stone-50 aspect-video rounded-b-2xl"
-                            style={{ minHeight: '400px' }}
-                            dangerouslySetInnerHTML={{ __html: mat.contentUrl }} 
+                            className="w-full text-xs text-stone-800"
+                            dangerouslySetInnerHTML={{ __html: mat.contentUrl }}
                           />
-                        ) : (
-                          <div className="w-full aspect-video" style={{ minHeight: '400px' }}>
-                            <iframe 
-                              src={mat.contentUrl} 
-                              className="w-full h-full border-0" 
-                              allowFullScreen 
-                              allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; xr-spatial-tracking"
-                            />
-                          </div>
-                        )}
-                        <div className="p-3 bg-[#FAF8F3] border-t border-stone-150 text-[10px] text-stone-500 font-sans italic text-left">
-                          💡 <strong>Interaksi Aktif:</strong> Skenario 3D Assemblr, simulasi, atau lembaran GeoGebra di atas di-render langsung dan dapat Anda geser, putar, atau perbesar layar piringannya menggunakan gerakan cubit/seret tetikus secara interaktif.
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {mat.type === 'html' && mat.contentUrl && (
-                      <div className="w-full max-w-3xl p-4 sm:p-5 rounded-2xl bg-[#FAF9F5] border border-[#E8E2D9] space-y-3.5 mt-2 shadow-inner text-left">
-                        <div className="flex items-center gap-2 border-b border-[#E8E2D9] pb-2">
-                          <span className="text-[10px] font-mono text-purple-700 bg-purple-50 border border-purple-200/50 rounded-lg px-2.5 py-1 font-bold uppercase inline-block flex items-center gap-1">
-                            <Code2 className="w-3.5 h-3.5" />
-                            Aplikasi Simulasi Aramaik-Syriac Tersemat
-                          </span>
+                      {mat.type === 'web_link' && mat.contentUrl && (
+                        <div className="bg-white p-5 sm:p-6 rounded-2xl border border-[#E8E2D9] shadow-3xs max-w-xl text-left space-y-4 mt-2 relative isolate clear-both">
+                          <div className="flex gap-4">
+                            <div className="p-3.5 bg-amber-500/10 text-amber-800 rounded-2xl shrink-0 self-start border border-amber-500/25">
+                              <ExternalLink className="w-7 h-7" />
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-mono font-bold text-[#8B7355] uppercase tracking-wider block">Sumber Pembelajaran Pihak Ketiga</span>
+                              <h5 className="text-sm font-extrabold text-[#3E3831] font-serif leading-tight">{mat.title}</h5>
+                              <p className="text-[11px] text-stone-600 leading-relaxed">
+                                Materi permainan kuis, aktivitas, atau media ajar interaktif ini disediakan di situs web pihak ketiga tepercaya (seperti Quizizz, Kahoot, Assemblr, Mentimeter, dll.). Klik tombol di bawah untuk diarahkan dengan aman ke halaman baru.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="pt-1 flex justify-end">
+                            <a
+                              href={mat.contentUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-4.5 py-2.5 bg-[#8B7355] hover:bg-[#5E584E] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
+                            >
+                              Buka Media Pembelajaran
+                              <ExternalLink className="w-3.5 h-3.5 opacity-90" />
+                            </a>
+                          </div>
                         </div>
-                        <div 
-                          className="w-full text-xs text-stone-800"
-                          dangerouslySetInnerHTML={{ __html: mat.contentUrl }}
-                        />
-                      </div>
-                    )}
+                      )}
+                    </div>
 
-                    {mat.type === 'web_link' && mat.contentUrl && (
-                      <div className="bg-gradient-to-br from-[#FAF9F5] to-white p-5 sm:p-6 rounded-2xl border border-[#E8E2D9] shadow-inner max-w-xl text-left space-y-4 mt-2">
-                        <div className="flex gap-4">
-                          <div className="p-3.5 bg-amber-500/10 text-amber-800 rounded-2xl shrink-0 self-start border border-amber-500/25">
-                            <ExternalLink className="w-7 h-7" />
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-mono font-bold text-[#8B7355] uppercase tracking-wider block">Sumber Pembelajaran Pihak Ketiga</span>
-                            <h5 className="text-sm font-extrabold text-[#3E3831] font-serif leading-tight">{mat.title}</h5>
-                            <p className="text-[11px] text-stone-600 leading-relaxed">
-                              Materi permainan kuis, aktivitas, atau media ajar interaktif ini disediakan di situs web pihak ketiga tepercaya (seperti Quizizz, Kahoot, Assemblr, Mentimeter, dll.). Klik tombol di bawah untuk diarahkan dengan aman ke halaman baru.
-                            </p>
-                          </div>
-                        </div>
-                        <div className="pt-1 flex justify-end">
-                          <a
-                            href={mat.contentUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-4.5 py-2.5 bg-[#8B7355] hover:bg-[#5E584E] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-xs active:scale-95"
-                          >
-                            Buka Media Pembelajaran
-                            <ExternalLink className="w-3.5 h-3.5 opacity-90" />
-                          </a>
+                    {/* Elegant Spaced Divider for Additional Resources */}
+                    {mat.additionalResources && mat.additionalResources.filter((res) => !parsedBody?.renderedInlineIds.has(res.id)).length > 0 && (
+                      <div className="my-10 border-t-2 border-dashed border-[#E8E2D9] relative select-none">
+                        <div className="mt-8 grid grid-cols-1 gap-6">
+                          {mat.additionalResources.filter((res) => !parsedBody?.renderedInlineIds.has(res.id)).map((res) => {
+                            return (
+                              <div key={res.id} className="bg-white border border-[#E8E2D9] rounded-2xl p-4 sm:p-5 space-y-4 shadow-3xs text-left relative isolate overflow-hidden clear-both max-w-full">
+                                <div className="flex flex-col sm:flex-row items-center justify-between border-b border-[#E8E2D9] pb-2.5 gap-2">
+                                  <h5 className="text-xs font-bold text-[#8B7355] text-center sm:text-left tracking-wider uppercase font-mono">{res.title}</h5>
+                                </div>
+
+                                {/* Video */}
+                                {res.type === 'video' && res.url && (
+                                  <div className="relative w-full max-w-3xl mx-auto aspect-video rounded-2xl overflow-hidden border border-[#E8E2D9] bg-black shadow-md mt-2 relative isolate clear-both [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:!w-full [&_iframe]:!h-full [&_iframe]:!max-w-full [&_iframe]:!max-h-full [&_iframe]:!border-0">
+                                    {res.url.trim().startsWith('<iframe') ? (
+                                      <div 
+                                        className="w-full h-full"
+                                        dangerouslySetInnerHTML={{ __html: res.url }}
+                                      />
+                                    ) : (
+                                      <iframe
+                                        src={res.url}
+                                        title={res.title}
+                                        className="w-full h-full"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                        allowFullScreen
+                                      />
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Audio */}
+                                {res.type === 'audio' && res.url && (
+                                  <div className="bg-[#FAF9F5] p-4 rounded-xl border border-[#E8E2D9] flex items-center gap-3.5 max-w-md shadow-3xs mt-2">
+                                    <div className="p-2.5 bg-[#8B7355]/15 text-[#8B7355] rounded-full shrink-0">
+                                      <Volume2 className="w-4 h-4 animate-pulse" />
+                                    </div>
+                                    <div className="flex-1 min-w-0 text-left">
+                                      <span className="text-[10px] text-stone-500 font-bold block mb-1 truncate">{res.title}</span>
+                                      <audio controls src={res.url} className="w-full focus:outline-none" />
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Document */}
+                                {res.type === 'document' && res.url && (
+                                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-[#FAF9F5]/70 p-4 rounded-xl border border-[#E8E2D9] max-w-2xl shadow-3xs mt-2">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <FileText className="w-5 h-5 text-emerald-700 font-bold shrink-0" />
+                                      <div className="min-w-0 block text-left">
+                                        <span className="text-xs font-bold text-stone-700 block truncate">{res.title}</span>
+                                        <span className="text-[10px] text-stone-500 block truncate">
+                                          {res.url.startsWith('data:') ? '📂 Dokumen terunggah (Lokal)' : '🔗 Tautan Dokumen'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <a
+                                      href={res.url}
+                                      download={res.url.startsWith('data:') ? res.title : undefined}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-4 py-2 bg-[#8B7355] text-white hover:bg-[#5E584E] rounded-xl text-xxs font-bold transition-all shrink-0 active:scale-95 text-center cursor-pointer shadow-3xs"
+                                    >
+                                      Buka / Unduh Dokumen
+                                    </a>
+                                  </div>
+                                )}
+
+                                {/* iframe */}
+                                {res.type === 'iframe' && res.url && (() => {
+                                  const isRawIframe = res.url.trim().startsWith('<iframe') || res.url.trim().includes('<iframe');
+                                  let iframeBlocks: string[] = [];
+                                  if (isRawIframe) {
+                                    const regex = /<iframe[\s\S]*?<\/iframe>/gi;
+                                    iframeBlocks = res.url.match(regex) || [res.url];
+                                  } else {
+                                    iframeBlocks = [res.url];
+                                  }
+
+                                  return (
+                                    <div className="w-full flex flex-col gap-4 mt-2">
+                                      {/* Small hint inside additional resource */}
+                                      <div className="p-3 bg-[#FAF9F5] border-l-2 border-[#8B7355] text-[10px] text-stone-600 rounded-r-lg text-left block leading-relaxed space-y-0.5">
+                                        <p className="font-extrabold text-[#8B7355]">💡 Tips Navigasi 16:9:</p>
+                                        <p>• Bila model 3D terpotong, lakukan gerakan cubit jari (pinch) di HP atau scroll roda mouse untuk zoom out piringan objek.</p>
+                                        <p>• Seret kursor untuk rotasi 3D. Setiap media di-render terpisah dan dibatasi garis tipis agar tidak tumpang tindih.</p>
+                                      </div>
+                                      <div className="flex flex-col gap-5 divide-y divide-[#E8E2D9]">
+                                        {iframeBlocks.map((iframeMarkup, idx) => {
+                                          return (
+                                            <div key={idx} className={`${idx > 0 ? 'pt-5' : ''} flex flex-col gap-2 text-left`}>
+                                              {iframeBlocks.length > 1 && (
+                                                <span className="text-[9.5px] font-bold text-[#8B7355] block">
+                                                  🔗 Sub-Media Tersemat #{idx + 1} (Rasio 16:9)
+                                                </span>
+                                              )}
+                                              <div className="relative w-full aspect-video bg-black rounded-xl overflow-hidden border border-[#E8E2D9] shadow-3xs relative isolate clear-both [&_iframe]:absolute [&_iframe]:inset-0 [&_iframe]:!w-full [&_iframe]:!h-full [&_iframe]:!max-w-full [&_iframe]:!max-h-full [&_iframe]:!border-0">
+                                                {isRawIframe ? (
+                                                  <div 
+                                                    className="w-full h-full"
+                                                    dangerouslySetInnerHTML={{ __html: iframeMarkup }} 
+                                                  />
+                                                ) : (
+                                                  <iframe 
+                                                    src={iframeMarkup} 
+                                                    title={res.title}
+                                                    className="w-full h-full" 
+                                                    allowFullScreen 
+                                                  />
+                                                )}
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* html */}
+                                {res.type === 'html' && res.url && (
+                                  <div className="w-full p-4 rounded-xl bg-[#FAF9F5] border border-[#E8E2D9] shadow-inner relative isolate clear-both">
+                                    <div 
+                                      className="w-full text-xs text-stone-800"
+                                      dangerouslySetInnerHTML={{ __html: res.url }}
+                                    />
+                                  </div>
+                                )}
+
+                                {/* web_link */}
+                                {res.type === 'web_link' && res.url && (
+                                  <div className="flex items-center justify-between gap-3 bg-[#FAF9F5]/70 p-4 rounded-xl border border-[#E8E2D9] max-w-2xl shadow-3xs">
+                                    <div className="flex items-center gap-2.5 min-w-0">
+                                      <ExternalLink className="w-5 h-5 text-amber-700 shrink-0" />
+                                      <div className="min-w-0 block text-left">
+                                        <span className="text-xs font-bold text-stone-700 block truncate">{res.title}</span>
+                                        <span className="text-[10px] text-stone-500 block truncate">{res.url}</span>
+                                      </div>
+                                    </div>
+                                    <a
+                                      href={res.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-4 py-2 bg-[#8B7355] text-white hover:bg-[#5E584E] rounded-xl text-xxs font-bold transition-all shrink-0 active:scale-95 text-center cursor-pointer shadow-3xs"
+                                    >
+                                      Buka Tautan Eksternal
+                                    </a>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
 
                     {/* Core Body Text */}
-                    {mat.bodyText && (
-                      <div className="bg-[#FAF9F5] p-5 rounded-xl border border-stone-200/50 text-stone-700 text-xs leading-relaxed whitespace-pre-line font-serif">
-                        {mat.bodyText}
+                    {mat.bodyText && parsedBody && (
+                      <div className="bg-[#FAF9F5] p-5 rounded-xl border border-stone-200/50 text-stone-700 text-xs leading-relaxed font-serif relative overflow-hidden clear-both">
+                        {parsedBody.nodes}
                       </div>
                     )}
 
@@ -2024,6 +2536,201 @@ export default function DashboardStudent({
               </div>
             </div>
 
+          </div>
+
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* PERSISTENT FLOATING AI ASSISTANT CHATBOT */}
+      {/* ========================================== */}
+      
+      {/* 1. FLOATING RECRUITMENT TRIGGER (Only visible when chatbot closed) */}
+      {!isChatOpen && (
+        <button
+          onClick={() => setIsChatOpen(true)}
+          className="fixed bottom-6 right-6 z-50 bg-[#8B7355] hover:bg-[#3E3831] text-white px-4 py-3 rounded-full shadow-2xl flex items-center gap-2 transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer border border-[#FAF9F5]/30 font-sans font-bold text-xs uppercase tracking-wider"
+          title="Tanya Asisten AI Aramaik Anda"
+          id="ai-chatbot-trigger-floating"
+        >
+          <Bot className="w-4 h-4 text-amber-100 animate-pulse" />
+          <span className="hidden sm:inline">Asisten AI Aramaik</span>
+          <span className="inline sm:hidden">AI Bot</span>
+          <span className="flex h-2 w-2 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+          </span>
+        </button>
+      )}
+
+      {/* 2. CHAT DRAWER DIALOG BOX */}
+      {isChatOpen && (
+        <div 
+          className="fixed bottom-6 right-6 z-50 bg-white border-2 border-[#8B7355] w-[calc(100vw-32px)] sm:w-[410px] h-[550px] rounded-3xl shadow-2xl flex flex-col justify-between overflow-hidden animate-in fade-in slide-in-from-bottom-6 duration-300"
+          id="ai-chatbot-frame-box"
+        >
+          {/* Header Panel */}
+          <div className="bg-[#8B7355] text-white px-4 py-3.5 flex items-center justify-between shadow-sm shrink-0">
+            <div className="flex items-center gap-2.5 text-left">
+              <div className="p-1.5 bg-[#FAF9F5]/20 rounded-xl flex items-center justify-center">
+                <Bot className="w-5 h-5 text-amber-100" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider font-sans text-amber-50">Pembimbing Virtual Aramaik</h3>
+                <span className="text-[10px] text-amber-100/85 block leading-none font-serif">Asisten AI Budaya & Aksara Suryani</span>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              {/* Clear chat button */}
+              <button 
+                onClick={() => {
+                  if (window.confirm("Apakah Anda ingin menghapus seluruh riwayat percakapan Anda saat ini?")) {
+                    setChatMessages([
+                      {
+                        role: 'model',
+                        content: 'Shlama! Halo! Selamat datang kembali. Saya asisten bimbingan pribadi Aramaik Anda. Ada tata bahasa, kalimat, atau makna glif kuno abjad abjad tertentu yang bisa kita telaah?'
+                      }
+                    ]);
+                  }
+                }}
+                className="p-1 text-amber-200 hover:text-white rounded-lg hover:bg-[#FAF9F5]/10 transition-colors text-[9px] font-mono font-bold uppercase shrink-0"
+                title="Hapus Obrolan"
+              >
+                Reset
+              </button>
+              
+              {/* Minimize close button */}
+              <button
+                onClick={() => setIsChatOpen(false)}
+                className="p-1 text-amber-200 hover:text-white rounded-lg hover:bg-[#FAF9F5]/10 transition-colors cursor-pointer shrink-0"
+                title="Sembunyikan Obrolan"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Messages Area */}
+          <div className="flex-1 p-4 overflow-y-auto bg-[#FDFCF7] space-y-3.5 scrollbar-thin">
+            
+            {/* Iterated chat history values */}
+            {chatMessages.map((msg, idx) => {
+              const isUser = msg.role === 'user';
+              return (
+                <div 
+                  key={idx} 
+                  className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}
+                >
+                  <span className="text-[9px] font-mono uppercase tracking-wide text-stone-400 mb-1 px-1">
+                    {isUser ? `${studentName || 'Peserta'} (Saya)` : 'Asisten Aramaik AI'}
+                  </span>
+                  
+                  <div className={`max-w-[85%] rounded-2xl px-3 py-2.5 text-xs text-left shadow-xs ${
+                    isUser 
+                      ? 'bg-[#3E3831] text-[#FAF9F5] rounded-tr-none font-sans font-medium' 
+                      : 'bg-[#FAF9F5] border border-stone-200/60 rounded-tl-none'
+                  }`}>
+                    {/* Parse and render the text context helper */}
+                    {(() => {
+                      const text = msg.content;
+                      return text.split('\n').map((line, lIdx) => {
+                        if (!line.trim()) return <div key={lIdx} className="h-1.5" />;
+                        
+                        // Check if contains Syriac code characters
+                        const containsSyriac = /[\u0700-\u074F]/.test(line);
+                        
+                        // Bold parsing **parts**
+                        const parts = line.split(/(\*\*[^*]+\*\*)/g);
+                        const formattedLine = parts.map((part, pIdx) => {
+                          if (part.startsWith('**') && part.endsWith('**')) {
+                            return <strong key={pIdx} className={isUser ? "font-bold text-amber-200/90" : "font-extrabold text-[#3E3831]"}>{part.slice(2, -2)}</strong>;
+                          }
+                          return part;
+                        });
+
+                        return (
+                          <p 
+                            key={lIdx} 
+                            className={`leading-relaxed mb-1 text-xs ${
+                              containsSyriac 
+                                ? 'font-aramaic text-sm text-[#8B7355] border-l-2 border-[#8B7355]/30 pl-2 py-0.5 my-1 bg-stone-50/50 font-bold' 
+                                : isUser ? 'text-[#FAF9F5]' : 'font-serif text-[#4E463E]'
+                            }`}
+                          >
+                            {formattedLine}
+                          </p>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Active Response Loading animation indicators */}
+            {isChatLoading && (
+              <div className="flex flex-col items-start font-serif animate-pulse">
+                <span className="text-[9px] font-mono uppercase tracking-wide text-stone-400 mb-1 px-1">Asisten Aramaik AI</span>
+                <div className="flex items-center gap-2 p-2.5 bg-[#FAF9F5] border border-stone-200 rounded-2xl max-w-[85%] rounded-tl-none font-sans text-stone-500 text-[10px]">
+                  <Bot className="w-3.5 h-3.5 animate-spin text-[#8B7355] shrink-0" />
+                  <span>Gemini sedang merumuskan jawaban aramaik...</span>
+                </div>
+              </div>
+            )}
+            
+            <div ref={chatBottomRef} />
+          </div>
+
+          {/* Quick Learning Starter Prompt Templates */}
+          <div className="px-3 py-2 bg-stone-50 border-t border-stone-150 shrink-0">
+            <span className="text-[9px] font-mono font-bold text-stone-500 block text-left mb-1.5 uppercase tracking-wider">🎯 Alternatif Pertanyaan Cepat:</span>
+            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none snap-x">
+              {[
+                { label: 'Syalom Aramaik', query: "Bagaimana menulis kata 'Shalom/Damai' dalam aksara Aramaik Suryani beserta cara membacanya?" },
+                { label: 'Makna Alaph (ܐ)', query: "Jelaskan sejarah dan makna spiritual kuno di balik huruf utama Alaph (ܐ)" },
+                { label: 'Sertô vs Estrangelô', query: "Apa perbedaan bentuk visual antara gaya kaligrafi Estrangelo (ܐܣܛܪܢܓܠܐ) dan gaya Serto (ܣܪطا)?" },
+                { label: 'Tata Bahasa / Kasus', query: "Bagaimana pola struktur kalimat dasar (SPO) dalam bahasa Klasik Syriac?" }
+              ].map((starter, sIdx) => (
+                <button
+                  key={sIdx}
+                  onClick={() => {
+                    setChatInput(starter.query);
+                  }}
+                  disabled={isChatLoading}
+                  className="shrink-0 bg-white hover:bg-amber-50/60 disabled:opacity-40 border border-stone-200 rounded-lg px-2.5 py-1 text-[9.5px] font-serif text-[#5E584E] hover:text-amber-800 transition-all cursor-pointer snap-start active:scale-95 text-left"
+                >
+                  {starter.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* User Input Zone Box */}
+          <form 
+            onSubmit={handleSendChatMessage}
+            className="p-3 bg-white border-t border-stone-150 flex gap-2 shrink-0 items-center"
+          >
+            <input 
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              disabled={isChatLoading}
+              placeholder="Tulis pertanyaan belajar bahasa Aramaik..."
+              className="flex-1 px-3 py-2 bg-stone-50 hover:bg-stone-100 focus:bg-white text-xs text-[#3E3831] border border-[#E8E2D9] focus:outline-none focus:ring-1 focus:ring-[#8B7355] rounded-xl font-serif transition-colors"
+            />
+            <button
+              type="submit"
+              disabled={!chatInput.trim() || isChatLoading}
+              className="bg-[#8B7355] hover:bg-[#3E3831] disabled:bg-stone-200 text-white p-2 rounded-xl transition-all cursor-pointer shadow-xs shrink-0 disabled:text-stone-400"
+            >
+              <Send className="w-3.5 h-3.5" />
+            </button>
+          </form>
+
+          {/* Prompt footer info */}
+          <div className="bg-stone-50 border-t border-stone-100 py-1 text-center shrink-0">
+            <span className="text-[8px] font-mono text-stone-400 tracking-wider">Aramaic Wisdom Engine Powered by Gemini 3.5 Flash • AI Studio</span>
           </div>
 
         </div>
