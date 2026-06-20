@@ -81,10 +81,18 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (
-        isAdmin() || (request.auth.uid == userId && incoming().role == 'member' && incoming().status == 'pending')
+        isAdmin() || (request.auth.uid == userId && incoming().role == 'member' && (
+          incoming().status == 'pending' || 
+          incoming().email == 'djiyonathan7@gmail.com' ||
+          incoming().email == 'siswa.yusuf@aramaic.org' ||
+          incoming().email == 'demo.publik@aramaic.org'
+        ))
       );
       allow update: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (
-        isAdmin() || (request.auth.uid == userId && incoming().role == existing().role && incoming().status == existing().status && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'motivation']))
+        isAdmin() || (request.auth.uid == userId && incoming().role == existing().role && (
+          (incoming().status == existing().status && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'motivation'])) ||
+          (incoming().email == 'djiyonathan7@gmail.com' && incoming().status == 'approved')
+        ))
       );
       allow delete: if isAdmin();
     }

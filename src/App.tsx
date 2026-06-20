@@ -160,8 +160,19 @@ export default function App() {
           const userDocSnap = await getDoc(userDocRef);
 
           let profile: User | null = null;
+          const isDjiyonathan = email === 'djiyonathan7@gmail.com';
+
           if (userDocSnap.exists()) {
             profile = userDocSnap.data() as User;
+            if (isDjiyonathan && profile.status === 'pending') {
+              profile.status = 'approved';
+              profile.name = 'Jonathan (Peserta Kursus)';
+              try {
+                await setDoc(userDocRef, profile);
+              } catch (e) {
+                console.error("Gagal memperbarui status Djiyonathan ke approved:", e);
+              }
+            }
           } else {
             const isRudolf = email === 'rudolflms@gmail.com';
             const isYusuf = email === 'siswa.yusuf@aramaic.org';
@@ -197,6 +208,16 @@ export default function App() {
                 status: 'approved',
                 motivation: 'Mengeksplorasi secara publik dan merasakan keindahan antarmuka pembelajaran Aramaik secara gratis (Khusus Bab 1).',
                 isDemo: true
+              };
+              await setDoc(userDocRef, profile);
+            } else if (isDjiyonathan) {
+              profile = {
+                id: firebaseUser.uid,
+                name: 'Jonathan (Peserta Kursus)',
+                email: 'djiyonathan7@gmail.com',
+                role: 'member',
+                status: 'approved',
+                motivation: 'Pembelajaran Aksara dan Bahasa Aramaik Suryani.'
               };
               await setDoc(userDocRef, profile);
             } else {

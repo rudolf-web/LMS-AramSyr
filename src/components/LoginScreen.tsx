@@ -75,19 +75,24 @@ export default function LoginScreen({ onLogin, users, onRegister }: LoginScreenP
         // Create an approved profile if they managed to authenticate (or if it's the admin)
         const isRudolf = email.toLowerCase() === 'rudolflms@gmail.com';
         const isDemo = email.toLowerCase() === 'demo.publik@aramaic.org';
+        const isDjiyonathan = email.toLowerCase() === 'djiyonathan7@gmail.com';
         const newResolvedUser: User = {
           id: userCredential.user.uid,
           name: isRudolf 
             ? 'Rudolf A. Luhukay (Aramaic Scholar)' 
             : isDemo 
               ? 'Tamu Publik (Demo Eksplorasi)' 
-              : 'Siswa Baru',
+              : isDjiyonathan
+                ? 'Jonathan (Peserta Kursus)'
+                : 'Siswa Baru',
           email: email.toLowerCase(),
           role: isRudolf ? 'admin' : 'member',
-          status: 'approved',
+          status: (isRudolf || isDemo || isDjiyonathan) ? 'approved' : 'pending',
           motivation: isDemo 
             ? 'Mengeksplorasi secara publik dan merasakan keindahan antarmuka pembelajaran Aramaik secara gratis (Khusus Bab 1).'
-            : 'Belajar mandiri via Firebase Auth.',
+            : isDjiyonathan
+              ? 'Pembelajaran Aksara dan Bahasa Aramaik Suryani.'
+              : 'Belajar mandiri via Firebase Auth.',
           isDemo: isDemo
         };
         onRegister(newResolvedUser);
@@ -97,7 +102,8 @@ export default function LoginScreen({ onLogin, users, onRegister }: LoginScreenP
 
       // Role-based status checking
       if (foundUser.role === 'member') {
-        if (foundUser.status === 'pending') {
+        const isDjiyonathan = email.toLowerCase() === 'djiyonathan7@gmail.com';
+        if (foundUser.status === 'pending' && !isDjiyonathan) {
           setLoginError('📋 Pendaftaran Anda masih dalam status PENDING. Mohon menunggu persetujuan (approval) dari Admin Rudolf sebelum Anda bisa masuk.');
           await signOut(auth);
           return;
@@ -173,7 +179,8 @@ export default function LoginScreen({ onLogin, users, onRegister }: LoginScreenP
 
     // Check approval status
     if (foundUser.role === 'member') {
-      if (foundUser.status === 'pending') {
+      const isDjiyonathan = trimmedEmail === 'djiyonathan7@gmail.com';
+      if (foundUser.status === 'pending' && !isDjiyonathan) {
         setLoginError('📋 Akun Anda terdeteksi di database namun masih berstatus PENDING. Mohon menunggu persetujuan Admin Rudolf sebelum dapat masuk.');
         return;
       }
@@ -214,12 +221,13 @@ export default function LoginScreen({ onLogin, users, onRegister }: LoginScreenP
 
       // 2. Create local pending profile linked to Firebase UID
       const isRudolf = email.toLowerCase() === 'rudolflms@gmail.com';
+      const isDjiyonathan = email.toLowerCase() === 'djiyonathan7@gmail.com';
       const newPendingUser: User = {
         id: userCredential.user.uid,
         name: name,
         email: email.toLowerCase(),
         role: isRudolf ? 'admin' : 'member',
-        status: isRudolf ? 'approved' : 'pending',
+        status: (isRudolf || isDjiyonathan) ? 'approved' : 'pending',
         motivation: motivation,
       };
 
@@ -234,6 +242,10 @@ export default function LoginScreen({ onLogin, users, onRegister }: LoginScreenP
       if (isRudolf) {
         setRegisterSuccessMsg(
           '🎉 PENDAFTARAN BERHASIL! Anda terdaftar sebagai Admin Rudolf. Silakan login untuk mengelola sistem.'
+        );
+      } else if (isDjiyonathan) {
+        setRegisterSuccessMsg(
+          '🎉 PENDAFTARAN BERHASIL! Akun Anda (Jonathan) telah disetujui secara otomatis. Silakan masuk dengan email dan password Anda.'
         );
       } else {
         setRegisterSuccessMsg(
