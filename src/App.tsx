@@ -87,6 +87,24 @@ export default function App() {
         }
       }
 
+      // Ensure djiyonathan7@gmail.com exists in users collection so Admin Rudolf can see him immediately
+      const qJonathan = query(collection(db, 'users'), where('email', '==', 'djiyonathan7@gmail.com'));
+      const snapJonathan = await getDocs(qJonathan);
+      if (snapJonathan.empty) {
+        console.log("Pre-seeding Jonathan (djiyonathan7@gmail.com) into Firestore users...");
+        // Since we don't know his exact authenticated UID prior to his first active session on this device,
+        // we use a recognized pre-seed ID. His first login will auto-migrate this profile to his actual UID.
+        const jUser: User = {
+          id: 'user_djiyonathan_pre',
+          name: 'Jonathan (Peserta Kursus)',
+          email: 'djiyonathan7@gmail.com',
+          role: 'member',
+          status: 'approved',
+          motivation: 'Pembelajaran Aksara dan Bahasa Aramaik Suryani.'
+        };
+        await setDoc(doc(db, 'users', jUser.id), jUser);
+      }
+
       // 2. Check if materials are empty
       const materialsSnap = await getDocs(collection(db, 'materials'));
       if (materialsSnap.empty) {
@@ -156,24 +174,42 @@ export default function App() {
         setSyncing(true);
         try {
           const email = firebaseUser.email?.toLowerCase() || '';
-          const userDocRef = doc(db, 'users', firebaseUser.uid);
-          const userDocSnap = await getDoc(userDocRef);
-
+          
+          // 1. Query users collection by email first to find any existing pre-seeded/registered profile
+          const qUserByEmail = query(collection(db, 'users'), where('email', '==', email));
+          const snapUserByEmail = await getDocs(qUserByEmail);
+          
           let profile: User | null = null;
+          let oldDocId: string | null = null;
+
+          if (!snapUserByEmail.empty) {
+            const matchedDoc = snapUserByEmail.docs[0];
+            profile = matchedDoc.data() as User;
+            oldDocId = matchedDoc.id;
+          }
+
           const isDjiyonathan = email === 'djiyonathan7@gmail.com';
 
-          if (userDocSnap.exists()) {
-            profile = userDocSnap.data() as User;
-            if (isDjiyonathan && profile.status === 'pending') {
+          if (profile) {
+            // Profile exists! If the existing profile is on a different document ID (e.g. pre-seeded ID)
+            // than the actual authenticated firebaseUser.uid, we clean up the old doc and save it under the real UID!
+            if (oldDocId !== firebaseUser.uid) {
+              console.log(`Migrating profile for ${email} from old ID ${oldDocId} to new uid ${firebaseUser.uid}`);
+              profile.id = firebaseUser.uid;
+              await setDoc(doc(db, 'users', firebaseUser.uid), profile);
+              try {
+                await deleteDoc(doc(db, 'users', oldDocId!));
+              } catch (delErr) {
+                console.warn("Failed to delete old pre-seeded profile doc:", delErr);
+              }
+            } else if (isDjiyonathan && profile.status === 'pending') {
+              // Ensure djiyonathan is approved
               profile.status = 'approved';
               profile.name = 'Jonathan (Peserta Kursus)';
-              try {
-                await setDoc(userDocRef, profile);
-              } catch (e) {
-                console.error("Gagal memperbarui status Djiyonathan ke approved:", e);
-              }
+              await setDoc(doc(db, 'users', firebaseUser.uid), profile);
             }
           } else {
+            // Create a brand new profile doc
             const isRudolf = email === 'rudolflms@gmail.com';
             const isYusuf = email === 'siswa.yusuf@aramaic.org';
             const isDemo = email === 'demo.publik@aramaic.org';
@@ -187,8 +223,7 @@ export default function App() {
                 status: 'approved',
                 motivation: 'Mengajar aksara dan melestarikan warisan linguistik luhur.'
               };
-              await setDoc(userDocRef, profile);
-              await seedDatabaseIfNeeded(); // Auto-seed if database is empty on admin login
+              await setDoc(doc(db, 'users', firebaseUser.uid), profile);
             } else if (isYusuf) {
               profile = {
                 id: firebaseUser.uid,
@@ -198,7 +233,7 @@ export default function App() {
                 status: 'approved',
                 motivation: 'Ingin mendalami aksara kuno Aramaik dan makna glif di baliknya.'
               };
-              await setDoc(userDocRef, profile);
+              await setDoc(doc(db, 'users', firebaseUser.uid), profile);
             } else if (isDemo) {
               profile = {
                 id: firebaseUser.uid,
@@ -209,7 +244,7 @@ export default function App() {
                 motivation: 'Mengeksplorasi secara publik dan merasakan keindahan antarmuka pembelajaran Aramaik secara gratis (Khusus Bab 1).',
                 isDemo: true
               };
-              await setDoc(userDocRef, profile);
+              await setDoc(doc(db, 'users', firebaseUser.uid), profile);
             } else if (isDjiyonathan) {
               profile = {
                 id: firebaseUser.uid,
@@ -219,7 +254,7 @@ export default function App() {
                 status: 'approved',
                 motivation: 'Pembelajaran Aksara dan Bahasa Aramaik Suryani.'
               };
-              await setDoc(userDocRef, profile);
+              await setDoc(doc(db, 'users', firebaseUser.uid), profile);
             } else {
               // Custom student registered
               profile = {
@@ -230,11 +265,16 @@ export default function App() {
                 status: 'pending',
                 motivation: 'Pendaftaran mandiri.'
               };
-              await setDoc(userDocRef, profile);
+              await setDoc(doc(db, 'users', firebaseUser.uid), profile);
             }
           }
 
           if (profile) {
+            if (profile.role === 'admin') {
+              // Always trigger seed/pre-seed routines when Admin logs in
+              await seedDatabaseIfNeeded();
+            }
+
             if (profile.role === 'member' && profile.status !== 'approved') {
               signOut(auth);
               setUser(null);
