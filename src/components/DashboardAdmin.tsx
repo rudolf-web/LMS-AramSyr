@@ -4,6 +4,7 @@ import {
   FileSpreadsheet, FileUp, Sparkles, Code2, Link2, ExternalLink, Columns
 } from 'lucide-react';
 import { Material, Assignment, Submission, FontStyle, User, MaterialResource } from '../types';
+import { safeConfirm, safeAlert } from '../utils/safeDialogs';
 
 interface DashboardAdminProps {
   adminName: string;
@@ -102,7 +103,7 @@ export default function DashboardAdmin({
     if (!file) return;
 
     if (file.size > 3.5 * 1024 * 1024) {
-      alert(`⚠️ File terlalu besar: ${(file.size / (1024 * 1024)).toFixed(2)} MB\n\nUntuk file di atas 3.5MB (seperti video panjang atau buku tebal), disarankan mengunggah ke Google Drive / Dropbox / Sharepoint Anda, lalu menempelkan tautan berbagi langsung (Direct Link) pada input link di bawah agar muatan data LMS tetap optimal!`);
+      safeAlert(`⚠️ File terlalu besar: ${(file.size / (1024 * 1024)).toFixed(2)} MB\n\nUntuk file di atas 3.5MB (seperti video panjang atau buku tebal), disarankan mengunggah ke Google Drive / Dropbox / Sharepoint Anda, lalu menempelkan tautan berbagi langsung (Direct Link) pada input link di bawah agar muatan data LMS tetap optimal!`);
       return;
     }
 
@@ -115,7 +116,7 @@ export default function DashboardAdmin({
       setUploading(false);
     };
     reader.onerror = () => {
-      alert("Terjadi kesalahan memproses file.");
+      safeAlert("Terjadi kesalahan memproses file.");
       setUploading(false);
     };
     reader.readAsDataURL(file);
@@ -124,7 +125,7 @@ export default function DashboardAdmin({
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim() || !formDescription.trim()) {
-      alert('Silakan isi Judul dan Deskripsi Singkat Materi!');
+      safeAlert('Silakan isi Judul dan Deskripsi Singkat Materi!');
       return;
     }
 
@@ -150,10 +151,10 @@ export default function DashboardAdmin({
 
     if (isEditing) {
       onEditMaterial(materialData);
-      alert('Materi berhasil diperbarui!');
+      safeAlert('Materi berhasil diperbarui!');
     } else {
       onAddMaterial(materialData);
-      alert('Materi baru berhasil ditambahkan!');
+      safeAlert('Materi baru berhasil ditambahkan!');
     }
 
     resetForm();
@@ -161,11 +162,11 @@ export default function DashboardAdmin({
 
   const handleAddResource = () => {
     if (!newResourceTitle.trim()) {
-      alert('Judul / Nama Media wajib diisi oleh Admin!');
+      safeAlert('Judul / Nama Media wajib diisi oleh Admin!');
       return;
     }
     if (!newResourceUrl.trim()) {
-      alert('Silakan isi Tautan / URL sumber alternatif!');
+      safeAlert('Silakan isi Tautan / URL sumber alternatif!');
       return;
     }
     const label = newResourceTitle.trim();
@@ -192,7 +193,7 @@ export default function DashboardAdmin({
     if (!file) return;
 
     if (file.size > 3.5 * 1024 * 1024) {
-      alert(`⚠️ File terlalu besar: ${(file.size / (1024 * 1024)).toFixed(2)} MB\nDisarankan tautan cloud agar optimal.`);
+      safeAlert(`⚠️ File terlalu besar: ${(file.size / (1024 * 1024)).toFixed(2)} MB\nDisarankan tautan cloud agar optimal.`);
       return;
     }
 
@@ -208,7 +209,7 @@ export default function DashboardAdmin({
       setNewResourceUploading(false);
     };
     reader.onerror = () => {
-      alert("Terjadi kesalahan memproses file.");
+      safeAlert("Terjadi kesalahan memproses file.");
       setNewResourceUploading(false);
     };
     reader.readAsDataURL(file);
@@ -237,7 +238,7 @@ export default function DashboardAdmin({
   };
 
   const handleDeleteClick = (materialId: string) => {
-    if (window.confirm('Apakah Anda yakin ingin menghapus materi pengajaran ini? Tindakan ini bersifat ireversibel.')) {
+    if (safeConfirm('Apakah Anda yakin ingin menghapus materi pengajaran ini? Tindakan ini bersifat ireversibel.')) {
       onDeleteMaterial(materialId);
     }
   };
@@ -247,7 +248,7 @@ export default function DashboardAdmin({
     if (!gradingSubmissionId) return;
 
     onGradeSubmission(gradingSubmissionId, Number(gradeValue), feedbackText);
-    alert('Penilaian dan umpan balik berhasil dikirim ke panel siswa!');
+    safeAlert('Penilaian dan umpan balik berhasil dikirim ke panel siswa!');
     setGradingSubmissionId(null);
     setFeedbackText('');
   };

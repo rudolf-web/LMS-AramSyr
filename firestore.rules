@@ -39,25 +39,22 @@ service cloud.firestore {
           && data.name is string && data.name.size() >= 1 && data.name.size() <= 128
           && data.email is string && data.email.size() >= 3 && data.email.size() <= 128
           && data.role is string && (data.role == 'admin' || data.role == 'member')
-          && data.status is string && (data.status == 'approved' || data.status == 'disapproved' || data.status == 'pending')
-          && data.motivation is string && data.motivation.size() <= 1000;
+          && (data.status == null || data.status is string);
     }
 
     function isValidMaterial(data) {
       return data.id is string && data.id.size() >= 1 && data.id.size() <= 128
           && data.title is string && data.title.size() >= 1 && data.title.size() <= 256
-          && data.level is string && (data.level == 'A1' || data.level == 'A2' || data.level == 'B1')
-          && data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 128
-          && data.description is string && data.description.size() <= 1000
-          && data.content is string && data.content.size() <= 50000;
+          && data.category is string && data.category.size() >= 1 && data.category.size() <= 128
+          && data.type is string && data.type.size() >= 1 && data.type.size() <= 128
+          && data.description is string && data.description.size() <= 2000;
     }
 
     function isValidAssignment(data) {
       return data.id is string && data.id.size() >= 1 && data.id.size() <= 128
           && data.title is string && data.title.size() >= 1 && data.title.size() <= 256
           && data.description is string && data.description.size() <= 5000
-          && data.moduleId is string && data.moduleId.size() >= 1 && data.moduleId.size() <= 128
-          && data.level is string && (data.level == 'A1' || data.level == 'A2' || data.level == 'B1')
+          && data.dueDate is string && data.dueDate.size() >= 1 && data.dueDate.size() <= 128
           && data.maxScore is int && data.maxScore >= 0 && data.maxScore <= 100;
     }
 
@@ -66,20 +63,22 @@ service cloud.firestore {
           && data.assignmentId is string && data.assignmentId.size() >= 1 && data.assignmentId.size() <= 128
           && data.studentId is string && data.studentId.size() >= 1 && data.studentId.size() <= 128
           && data.studentName is string && data.studentName.size() >= 1 && data.studentName.size() <= 128
-          && data.content is string && data.content.size() <= 10000
+          && data.content is string && data.content.size() <= 20000
           && data.status is string && (data.status == 'pending' || data.status == 'graded');
     }
 
     function isValidProgress(data) {
       return data.memberId is string && data.memberId.size() >= 1 && data.memberId.size() <= 128
           && data.completedMaterials is list && data.completedMaterials.size() <= 150
-          && data.quizScores is map && data.quizScores.size() <= 150;
+          && data.completedLetters is list && data.completedLetters.size() <= 150
+          && data.quizScores is map && data.quizScores.size() <= 150
+          && data.streakDays is int && data.streakDays >= 0;
     }
 
     // Collection Security Setup
     match /users/{userId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
+      allow get: if isSignedIn() && (isAdmin() || request.auth.uid == userId || (resource != null && resource.data.email.lower() == request.auth.token.email.lower()));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.email.lower() == request.auth.token.email.lower());
       allow create: if isSignedIn() && isValidId(userId) && isValidUser(incoming()) && (
         isAdmin() || (request.auth.uid == userId && incoming().role == 'member' && (
           incoming().status == 'pending' || 

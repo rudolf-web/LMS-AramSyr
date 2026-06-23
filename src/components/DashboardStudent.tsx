@@ -8,6 +8,7 @@ import {
 import { 
   Letter, Material, Assignment, Submission, QuizQuestion, FontStyle, UserProgress 
 } from '../types';
+import { safeConfirm, safeAlert } from '../utils/safeDialogs';
 import { ARAMAIC_ALPHABET } from '../data/alphabet';
 import { playAncientTone, speakLetterName } from '../utils/audioSynth';
 import { getBiblicalPassage, getModuleQuestions, ModuleQuestion } from '../data/moduleQuizzes';
@@ -223,7 +224,7 @@ export default function DashboardStudent({
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'letters' | 'materials' | 'quiz' | 'assignments' | 'profile' | 'whiteboard'>('dashboard');
   const [showCertificateModal, setShowCertificateModal] = useState(false);
-  const [materialsLevelOption, setMaterialsLevelOption] = useState<'A1' | 'A2' | 'B1' | 'ALL'>('A1');
+  const [materialsLevelOption, setMaterialsLevelOption] = useState<'A1' | 'A2' | 'B1' | 'ALL'>('ALL');
   const [certZoom, setCertZoom] = useState(100);
 
   // Automatically fit certificate preview to user's device screen layout
@@ -361,7 +362,7 @@ export default function DashboardStudent({
     });
 
     if (!allAnswered) {
-      alert("Silakan lengkapi jawaban untuk ketiga pertanyaan kuis terlebih dahulu!");
+      safeAlert("Silakan lengkapi jawaban untuk ketiga pertanyaan kuis terlebih dahulu!");
       return;
     }
 
@@ -499,13 +500,13 @@ export default function DashboardStudent({
 
   const handleSendAssignment = (assignmentId: string) => {
     if (isDemo) {
-      alert('🔒 Mode Tamu Publik Terbatas:\nAkun Contoh/Demo tidak dapat mengirimkan tugas secara resmi ke database Admin. Silakan buat akun pribadi gratis untuk mencoba fitur peninjauan tugas manual oleh Rudolf A. Luhukay!');
+      safeAlert('🔒 Mode Tamu Publik Terbatas:\nAkun Contoh/Demo tidak dapat mengirimkan tugas secara resmi ke database Admin. Silakan buat akun pribadi gratis untuk mencoba fitur peninjauan tugas manual oleh Rudolf A. Luhukay!');
       return;
     }
     const answer = assignmentTypingAnswers[assignmentId] || '';
     if (!answer.trim()) return;
     onSubmitAssignment(assignmentId, answer);
-    alert('Tugas berhasil dikumpulkan untuk ditinjau oleh Admin!');
+    safeAlert('Tugas berhasil dikumpulkan untuk ditinjau oleh Admin!');
   };
 
   // Compute stats
@@ -969,7 +970,8 @@ export default function DashboardStudent({
               })
               .map((mat) => {
                 const absoluteIndex = materials.findIndex((m) => m.id === mat.id);
-                const isUnlocked = absoluteIndex === 0 || (!isDemo && ((progress.quizScores[`module_quiz_${materials[absoluteIndex - 1].id}`] || 0) >= 70));
+                // All modules are unlocked and visible for registered students & admin, but demo users have access up to absoluteIndex 5
+                const isUnlocked = !isDemo || absoluteIndex < 5;
                 const isCompleted = progress.completedMaterials.includes(mat.id);
                 const quizScore = progress.quizScores[`module_quiz_${mat.id}`] || 0;
                 const isPassed = quizScore >= 70;
@@ -2585,7 +2587,7 @@ export default function DashboardStudent({
               {/* Clear chat button */}
               <button 
                 onClick={() => {
-                  if (window.confirm("Apakah Anda ingin menghapus seluruh riwayat percakapan Anda saat ini?")) {
+                  if (safeConfirm("Apakah Anda ingin menghapus seluruh riwayat percakapan Anda saat ini?")) {
                     setChatMessages([
                       {
                         role: 'model',

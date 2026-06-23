@@ -8,14 +8,15 @@ import {
   ShieldAlert, BookOpen, GraduationCap, LogOut, RefreshCw, 
   User as UserIcon, Shield, Layers, HelpCircle, ListTodo, CloudLightning
 } from 'lucide-react';
-import { auth, db } from './firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
+  auth, db,
   collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc,
   onSnapshot, query, where 
-} from 'firebase/firestore';
+} from './firebase';
+import { onAuthStateChanged, signOut, signInWithEmailAndPassword } from 'firebase/auth';
 import { User, Material, Assignment, Submission, FontStyle, UserProgress } from './types';
 import { INITIAL_MATERIALS, INITIAL_QUIZ_QUESTIONS, INITIAL_ASSIGNMENTS } from './data/materials';
+import { safeConfirm, safeAlert } from './utils/safeDialogs';
 import LoginScreen from './components/LoginScreen';
 import DashboardStudent from './components/DashboardStudent';
 import DashboardAdmin from './components/DashboardAdmin';
@@ -30,15 +31,64 @@ const DEFAULT_PROGRESS: UserProgress = {
 };
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    const cachedUser = localStorage.getItem('aramaic_current_user');
+    if (cachedUser) {
+      try {
+        return JSON.parse(cachedUser);
+      } catch (err) {}
+    }
+    return null;
+  });
   const [isOriginallyAdmin, setIsOriginallyAdmin] = useState<boolean>(() => {
     return localStorage.getItem('aramaic_original_user_is_admin') === 'true';
   });
   const [fontStyle, setFontStyle] = useState<FontStyle>('estrangelo');
 
+  // Custom confirmation & alert modals replacing native dialogs (which can fail in iframes)
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const [alertModal, setAlertModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  } | null>(null);
+
+  // Admin login states
+  const [showAdminLoginModal, setShowAdminLoginModal] = useState(false);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminLoginError, setAdminLoginError] = useState('');
+  const [isLoggingInAdmin, setIsLoggingInAdmin] = useState(false);
+
   // Curriculum & Task States
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [materials, setMaterials] = useState<Material[]>(() => {
+    try {
+      const cached = localStorage.getItem('aramaic_materials');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return INITIAL_MATERIALS;
+  });
+  const [assignments, setAssignments] = useState<Assignment[]>(() => {
+    try {
+      const cached = localStorage.getItem('aramaic_assignments');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return INITIAL_ASSIGNMENTS;
+  });
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [progress, setProgress] = useState<UserProgress>(DEFAULT_PROGRESS);
   const [users, setUsers] = useState<User[]>([]);
@@ -51,23 +101,6 @@ export default function App() {
   const seedDatabaseIfNeeded = async () => {
     try {
       const DEFAULT_USERS: User[] = [
-        {
-          id: 'user_student_1',
-          name: 'Siswa Yusuf (Murid Pemula)',
-          email: 'siswa.yusuf@aramaic.org',
-          role: 'member',
-          status: 'approved',
-          motivation: 'Ingin mendalami aksara kuno Aramaik dan makna glif di baliknya.'
-        },
-        {
-          id: 'user_demo_public',
-          name: 'Tamu Publik (Demo Eksplorasi)',
-          email: 'demo.publik@aramaic.org',
-          role: 'member',
-          status: 'approved',
-          motivation: 'Mengeksplorasi secara publik dan merasakan keindahan antarmuka pembelajaran Aramaik secara gratis (Khusus Bab 1).',
-          isDemo: true
-        },
         {
           id: 'user_admin',
           name: 'Rudolf A. Luhukay (Aramaic Scholar)',
@@ -87,24 +120,6 @@ export default function App() {
         }
       }
 
-      // Ensure djiyonathan7@gmail.com exists in users collection so Admin Rudolf can see him immediately
-      const qJonathan = query(collection(db, 'users'), where('email', '==', 'djiyonathan7@gmail.com'));
-      const snapJonathan = await getDocs(qJonathan);
-      if (snapJonathan.empty) {
-        console.log("Pre-seeding Jonathan (djiyonathan7@gmail.com) into Firestore users...");
-        // Since we don't know his exact authenticated UID prior to his first active session on this device,
-        // we use a recognized pre-seed ID. His first login will auto-migrate this profile to his actual UID.
-        const jUser: User = {
-          id: 'user_djiyonathan_pre',
-          name: 'Jonathan (Peserta Kursus)',
-          email: 'djiyonathan7@gmail.com',
-          role: 'member',
-          status: 'approved',
-          motivation: 'Pembelajaran Aksara dan Bahasa Aramaik Suryani.'
-        };
-        await setDoc(doc(db, 'users', jUser.id), jUser);
-      }
-
       // 2. Check if materials are empty
       const materialsSnap = await getDocs(collection(db, 'materials'));
       if (materialsSnap.empty) {
@@ -121,13 +136,6 @@ export default function App() {
         for (const a of INITIAL_ASSIGNMENTS) {
           await setDoc(doc(db, 'assignments', a.id), a);
         }
-      }
-
-      // 4. Check if progress is empty
-      const progressSnap = await getDocs(collection(db, 'progress'));
-      if (progressSnap.empty) {
-        console.log("Seeding Yusuf progress into Firestore...");
-        await setDoc(doc(db, 'progress', 'user_student_1'), DEFAULT_PROGRESS);
       }
     } catch (err) {
       console.warn("Error seeding database, perhaps internet offline:", err);
@@ -303,6 +311,17 @@ export default function App() {
       }
     });
 
+    // Trigger seeding database directly on mount only if cached user is admin
+    const cachedUserOnMount = localStorage.getItem('aramaic_current_user');
+    if (cachedUserOnMount) {
+      try {
+        const u = JSON.parse(cachedUserOnMount);
+        if (u && u.role === 'admin') {
+          seedDatabaseIfNeeded();
+        }
+      } catch (e) {}
+    }
+
     return () => unsubscribeAuth();
   }, []);
 
@@ -311,18 +330,31 @@ export default function App() {
     if (!user) return;
 
     // Start fetching & listening to collections
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const list: User[] = [];
-      snapshot.forEach(doc => {
-        list.push(doc.data() as User);
+    let unsubUsers: () => void;
+    if (user.role === 'admin' || isOriginallyAdmin) {
+      unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+        const list: User[] = [];
+        snapshot.forEach(doc => {
+          list.push(doc.data() as User);
+        });
+        if (list.length > 0) {
+          setUsers(list);
+          localStorage.setItem('aramaic_all_users', JSON.stringify(list));
+        }
+      }, (err) => {
+        console.warn("Unsatisfied rules or offline during user fetch: ", err);
       });
-      if (list.length > 0) {
-        setUsers(list);
-        localStorage.setItem('aramaic_all_users', JSON.stringify(list));
-      }
-    }, (err) => {
-      console.warn("Unsatisfied rules or offline during user fetch: ", err);
-    });
+    } else {
+      unsubUsers = onSnapshot(doc(db, 'users', user.id), (docSnap) => {
+        if (docSnap.exists()) {
+          const profileData = docSnap.data() as User;
+          setUsers([profileData]);
+          localStorage.setItem('aramaic_all_users', JSON.stringify([profileData]));
+        }
+      }, (err) => {
+        console.warn("Unsatisfied rules or offline during single user fetch: ", err);
+      });
+    }
 
     const unsubMaterials = onSnapshot(collection(db, 'materials'), (snapshot) => {
       const list: Material[] = [];
@@ -408,7 +440,7 @@ export default function App() {
         localStorage.removeItem('aramaic_current_user');
         localStorage.removeItem('aramaic_original_user_is_admin');
         signOut(auth);
-        alert("🔒 Akses Diblokir: Pendaftaran atau status akun Anda belum disetujui (PENDING) atau telah dinonaktifkan oleh Admin Rudolf Luhukay.");
+        safeAlert("🔒 Akses Diblokir: Pendaftaran atau status akun Anda belum disetujui (PENDING) atau telah dinonaktifkan oleh Admin Rudolf Luhukay.");
       } else if (user.status !== 'approved' || user.name !== matchedUser.name || user.role !== matchedUser.role) {
         setUser(matchedUser);
         localStorage.setItem('aramaic_current_user', JSON.stringify(matchedUser));
@@ -622,16 +654,96 @@ export default function App() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (e) {
-      console.warn("Sign out err", e);
+  const handleAdminSignInSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminEmail || !adminPassword) {
+      setAdminLoginError("Silakan isi semua bidang.");
+      return;
     }
-    setUser(null);
-    setIsOriginallyAdmin(false);
-    localStorage.removeItem('aramaic_current_user');
-    localStorage.removeItem('aramaic_original_user_is_admin');
+    setIsLoggingInAdmin(true);
+    setAdminLoginError('');
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
+      const fbUser = userCredential.user;
+      const emailLower = fbUser.email?.toLowerCase() || '';
+
+      const adminProfile: User = {
+        id: fbUser.uid,
+        name: emailLower === 'rudolflms@gmail.com' ? 'Rudolf A. Luhukay (Aramaic Scholar)' : 'Pendidik Aramaik',
+        email: emailLower,
+        role: 'admin',
+        status: 'approved',
+      };
+
+      // Save to users collection in our Firestore/LocalStorage DB
+      await setDoc(doc(db, 'users', fbUser.uid), adminProfile);
+
+      // Perform local state login
+      handleLogin(adminProfile);
+
+      // Success cleanup
+      setShowAdminLoginModal(false);
+      setAdminEmail('');
+      setAdminPassword('');
+      safeAlert("✅ Selamat datang kembali, Pengajar! Portal Admin aktif.");
+    } catch (err: any) {
+      console.error("Admin sign-in failed:", err);
+      let errMsg = "Email atau password tidak terdaftar atau salah.";
+      if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password" || err.code === "auth/invalid-credential") {
+        errMsg = "Kredensial tidak valid atau akun Anda belum terdaftar sebagai admin.";
+      } else if (err.message) {
+        errMsg = err.message;
+      }
+      setAdminLoginError(`Gagal masuk: ${errMsg}`);
+    } finally {
+      setIsLoggingInAdmin(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Konfirmasi Keluar",
+      message: user?.role === 'admin' ? "Apakah Anda yakin ingin keluar dari Portal Admin?" : "Apakah Anda yakin ingin keluar dari akun Anda?",
+      confirmText: "Keluar",
+      cancelText: "Batal",
+      onConfirm: async () => {
+        try {
+          await signOut(auth);
+        } catch (e) {
+          console.warn("Sign out error", e);
+        }
+        setUser(null);
+        setIsOriginallyAdmin(false);
+        localStorage.removeItem('aramaic_current_user');
+        localStorage.setItem('aramaic_original_user_is_admin', 'false');
+        setConfirmModal(null);
+        setAlertModal({
+          isOpen: true,
+          title: "Berhasil Keluar",
+          message: "Anda telah berhasil keluar dari akun Anda."
+        });
+      }
+    });
+  };
+
+  const handleResetProgress = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Setel Ulang Progres",
+      message: "Apakah Anda yakin ingin menyetel ulang seluruh kemajuan belajar (Progress) Anda ke kondisi awal? Ujian modul akan dikunci kembali.",
+      confirmText: "Setel Ulang",
+      cancelText: "Batal",
+      onConfirm: () => {
+        updateCachedProgress(DEFAULT_PROGRESS);
+        setConfirmModal(null);
+        setAlertModal({
+          isOpen: true,
+          title: "Progres Disetel Ulang",
+          message: "Kemajuan belajar Anda telah berhasil disetel ulang!"
+        });
+      }
+    });
   };
 
   const handleRegisterNewUser = async (newUser: User) => {
@@ -663,38 +775,53 @@ export default function App() {
   };
 
   const handleResetDatabase = async () => {
-    if (!window.confirm("Apakah Anda yakin ingin memulihkan materi, tugas, dan progress bawaan ke Cache? Semua data kustom akan diganti dengan bahan ajar resmi.")) {
-      return;
-    }
-    setSyncing(true);
-    try {
-      // Clear localStorage
-      localStorage.setItem('aramaic_materials', JSON.stringify(INITIAL_MATERIALS));
-      localStorage.setItem('aramaic_assignments', JSON.stringify(INITIAL_ASSIGNMENTS));
-      // demo submission
-      const demoSubmission: Submission = {
-        id: 'sub_demo_1',
-        assignmentId: 'assign_1',
-        studentId: 'user_student_1',
-        studentName: 'Siswa Yusuf (Murid Pemula)',
-        submittedAt: '17 Juni 2026, 18:15',
-        content: 'ܐܒܓܕ — Alaph melambangkan seekor sapi jantan yang berarti kekuatan luhur, Beth melambangkan rumah tempat bernaung, Gamal melambangkan unta penolong melintasi padang gurun gersang, dan Dalath melambangkan pintu gerbang raga.',
-        status: 'pending',
-      };
-      localStorage.setItem('aramaic_submissions', JSON.stringify([demoSubmission]));
-      localStorage.setItem('aramaic_progress', JSON.stringify(DEFAULT_PROGRESS));
+    setConfirmModal({
+      isOpen: true,
+      title: "Pulihkan Bahan Ajar Standar",
+      message: "Apakah Anda yakin ingin memulihkan materi, tugas, dan progress bawaan ke Cache? Semua data kustom akan diganti dengan bahan ajar resmi.",
+      confirmText: "Pulihkan",
+      cancelText: "Batal",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setSyncing(true);
+        try {
+          // Clear localStorage
+          localStorage.setItem('aramaic_materials', JSON.stringify(INITIAL_MATERIALS));
+          localStorage.setItem('aramaic_assignments', JSON.stringify(INITIAL_ASSIGNMENTS));
+          // demo submission
+          const demoSubmission: Submission = {
+            id: 'sub_demo_1',
+            assignmentId: 'assign_1',
+            studentId: 'user_student_1',
+            studentName: 'Siswa Yusuf (Murid Pemula)',
+            submittedAt: '17 Juni 2026, 18:15',
+            content: 'ܐܒܓܕ — Alaph melambangkan seekor sapi jantan yang berarti kekuatan luhur, Beth melambangkan rumah tempat bernaung, Gamal melambangkan unta penolong melintasi padang gurun gersang, dan Dalath melambangkan pintu gerbang raga.',
+            status: 'pending',
+          };
+          localStorage.setItem('aramaic_submissions', JSON.stringify([demoSubmission]));
+          localStorage.setItem('aramaic_progress', JSON.stringify(DEFAULT_PROGRESS));
 
-      setMaterials(INITIAL_MATERIALS);
-      setAssignments(INITIAL_ASSIGNMENTS);
-      setSubmissions([demoSubmission]);
-      setProgress(DEFAULT_PROGRESS);
-      alert("✅ Cache lokal berhasil dipulihkan ke materi bawaan!");
-    } catch (err) {
-      console.error(err);
-      alert("Terjadi kesalahan saat memulihkan database.");
-    } finally {
-      setSyncing(false);
-    }
+          setMaterials(INITIAL_MATERIALS);
+          setAssignments(INITIAL_ASSIGNMENTS);
+          setSubmissions([demoSubmission]);
+          setProgress(DEFAULT_PROGRESS);
+          setAlertModal({
+            isOpen: true,
+            title: "Berhasil Dipulihkan",
+            message: "Semua materi prasetel, tugas, dan progress telah dipulihkan ke Cache lokal."
+          });
+        } catch (err) {
+          console.error(err);
+          setAlertModal({
+            isOpen: true,
+            title: "Gagal Memulihkan",
+            message: "Terjadi kesalahan saat memulihkan database bawaan."
+          });
+        } finally {
+          setSyncing(false);
+        }
+      }
+    });
   };
 
   // Quick switch role connector to ease review processes as described in prompt
@@ -780,17 +907,40 @@ export default function App() {
                     SWAP ROLE
                   </button>
                 )}
+
+                {/* TEACHER/ADMIN PORTAL ENTRANCE - Shows if not authenticated yet */}
+                {!(user.role === 'admin' || isOriginallyAdmin) && (
+                  <button
+                    onClick={() => setShowAdminLoginModal(true)}
+                    className="px-2.5 py-1 bg-[#8B7355] hover:bg-[#3E3831] text-white text-[10px] font-mono font-bold rounded-lg transition-colors flex items-center gap-1.5 active:scale-95 shadow-sm"
+                    title="Masuk khusus untuk Admin & Pengajar"
+                  >
+                    <Shield className="w-3 h-3" />
+                    LOGIN ADMIN
+                  </button>
+                )}
               </div>
 
               <span className="h-6 w-px bg-stone-200" />
 
-              {/* Logout Button */}
+              {/* Reset Progress Button - only for students */}
+              {user.role !== 'admin' && (
+                <button
+                  onClick={handleResetProgress}
+                  className="p-1.5 hover:bg-stone-100 text-[#8B7355] hover:text-[#3E3831] rounded-lg transition-colors animate-in fade-in"
+                  title="Setel Ulang Progress Belajar"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* Logout Button - both for students and admin */}
               <button
                 onClick={handleLogout}
                 className="p-1.5 hover:bg-stone-100 text-[#8B7355] hover:text-[#3E3831] rounded-lg transition-colors"
-                title="Keluar Akun"
+                title={user.role === 'admin' ? "Keluar dari Portal Admin" : "Keluar Akun"}
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className={`w-4 h-4 ${user.role === 'admin' ? 'text-red-600' : 'text-[#8B7355]'}`} />
               </button>
 
             </div>
@@ -843,7 +993,145 @@ export default function App() {
         )}
       </main>
 
+      {/* HIGH-FIDELITY ADMIN LOGIN MODAL OVERLAY */}
+      {showAdminLoginModal && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-[#FAF9F5] border border-[#E8E2D9] max-w-sm w-full rounded-2xl shadow-xl overflow-hidden p-6 relative animate-in fade-in zoom-in-95 duration-200">
+            
+            {/* Close button */}
+            <button 
+              onClick={() => {
+                setShowAdminLoginModal(false);
+                setAdminEmail('');
+                setAdminPassword('');
+                setAdminLoginError('');
+              }}
+              className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 font-bold transition-colors text-sm"
+            >
+              ✕
+            </button>
 
+            {/* Crest Icon Header */}
+            <div className="text-center mb-5">
+              <div className="h-12 w-12 bg-stone-900 text-stone-100 rounded-full flex items-center justify-center font-bold text-xl mx-auto mb-2 shadow-sm">
+                <Shield className="w-6 h-6 text-yellow-500" />
+              </div>
+              <h2 className="text-[#3E3831] font-serif font-bold text-lg">Portal Khusus Admin</h2>
+              <p className="text-stone-500 text-xs mt-1 font-mono">
+                Silakan autentikasi menggunakan akun Pengajar
+              </p>
+            </div>
+
+            <form onSubmit={handleAdminSignInSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+                  Email Admin
+                </label>
+                <input
+                  type="email"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  placeholder="rudolflms@gmail.com"
+                  className="w-full px-3 py-2 bg-white border border-stone-200 rounded-xl text-stone-800 text-sm focus:outline-hidden focus:ring-1 focus:ring-[#8B7355] focus:border-[#8B7355]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-1">
+                  Password
+                </label>
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3 py-2 bg-white border border-[#FAF9F5]/20 rounded-xl text-stone-800 text-sm focus:outline-hidden focus:ring-1 focus:ring-[#8B7355] focus:border-[#8B7355]"
+                  required
+                />
+              </div>
+
+              {adminLoginError && (
+                <div className="flex gap-2 items-start bg-red-50 text-red-800 p-3 rounded-lg border border-red-200 text-xs">
+                  <ShieldAlert className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
+                  <span>{adminLoginError}</span>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isLoggingInAdmin}
+                className="w-full py-2.5 bg-[#8B7355] hover:bg-[#3E3831] disabled:bg-stone-300 text-white font-semibold rounded-xl text-xs transition-colors flex items-center justify-center gap-1.5 shadow-sm active:scale-98"
+              >
+                {isLoggingInAdmin ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Menyinkronkan...
+                  </>
+                ) : (
+                  <>
+                    <Shield className="w-4 h-4" />
+                    Masuk sebagai Pengajar
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FULL-FIDELITY REACT REUSABLE CUSTOM CONFIRMATION DIALOG MODAL */}
+      {confirmModal && confirmModal.isOpen && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-55 animate-in fade-in duration-200" style={{ zIndex: 9999 }}>
+          <div className="bg-[#FAF9F5] border border-[#E8E2D9] max-w-sm w-full rounded-2xl shadow-xl p-6 relative animate-in zoom-in-95 duration-200 text-left">
+            <h3 className="text-[#3E3831] font-serif font-bold text-base mb-2">
+              {confirmModal.title}
+            </h3>
+            <p className="text-stone-600 text-xs leading-relaxed mb-6">
+              {confirmModal.message}
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                {confirmModal.cancelText || "Batal"}
+              </button>
+              <button
+                type="button"
+                onClick={confirmModal.onConfirm}
+                className="px-4 py-2 bg-[#8B7355] hover:bg-[#3E3831] text-white text-xs font-semibold rounded-xl transition-colors shadow-sm cursor-pointer"
+              >
+                {confirmModal.confirmText || "Ya"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FULL-FIDELITY REACT REUSABLE CUSTOM ALERT DIALOG MODAL */}
+      {alertModal && alertModal.isOpen && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-55 animate-in fade-in duration-200" style={{ zIndex: 9999 }}>
+          <div className="bg-[#FAF9F5] border border-[#E8E2D9] max-w-sm w-full rounded-2xl shadow-xl p-6 relative animate-in zoom-in-95 duration-200 text-left">
+            <h3 className="text-[#3E3831] font-serif font-bold text-base mb-2">
+              {alertModal.title}
+            </h3>
+            <p className="text-stone-600 text-xs leading-relaxed mb-6">
+              {alertModal.message}
+            </p>
+            <div className="flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setAlertModal(null)}
+                className="px-4 py-2 bg-[#3E3831] hover:bg-stone-800 text-[#FAF9F5] text-xs font-semibold rounded-xl transition-colors shadow-xs cursor-pointer"
+              >
+                Selesai
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
