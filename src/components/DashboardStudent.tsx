@@ -974,7 +974,7 @@ export default function DashboardStudent({
                 let isUnlocked = true;
                 if (absoluteIndex > 0) {
                   const prevModule = materials[absoluteIndex - 1];
-                  const prevQuizScore = progress.quizScores[`module_quiz_${prevModule.id}`] || 0;
+                  const prevQuizScore = (progress?.quizScores && progress.quizScores[`module_quiz_${prevModule.id}`]) || 0;
                   const prevPassed = prevQuizScore >= 70;
                   if (!prevPassed) {
                     isUnlocked = false;
@@ -984,8 +984,8 @@ export default function DashboardStudent({
                 if (isDemo && absoluteIndex >= 5) {
                   isUnlocked = false;
                 }
-                const isCompleted = progress.completedMaterials.includes(mat.id);
-                const quizScore = progress.quizScores[`module_quiz_${mat.id}`] || 0;
+                const isCompleted = progress.completedMaterials?.includes(mat.id) || false;
+                const quizScore = (progress?.quizScores && progress.quizScores[`module_quiz_${mat.id}`]) || 0;
                 const isPassed = quizScore >= 70;
 
                 const parsedBody = mat.bodyText 
@@ -1011,7 +1011,7 @@ export default function DashboardStudent({
                         </p>
                       </div>
                       <div className="flex-shrink-0 bg-white border border-[#E8E2D9] px-3.5 py-2 rounded-xl text-[10px] font-mono font-semibold text-stone-500">
-                        Skor Prasyarat: {progress.quizScores[`module_quiz_${prevModule.id}`] || 0}% / 70%
+                        Skor Prasyarat: {(progress?.quizScores && progress.quizScores[`module_quiz_${prevModule.id}`]) || 0}% / 70%
                       </div>
                     </div>
                   );

@@ -430,11 +430,33 @@ export default function App() {
       });
     }
 
-    const unsubProgress = onSnapshot(doc(db, 'progress', user.id), (docSnap) => {
+    const unsubProgress = onSnapshot(doc(db, 'progress', user.id), async (docSnap) => {
       if (docSnap.exists()) {
         const progData = docSnap.data() as UserProgress;
-        setProgress(progData);
-        localStorage.setItem('aramaic_progress', JSON.stringify(progData));
+        const mergedProg = {
+          ...DEFAULT_PROGRESS,
+          ...progData,
+          quizScores: {
+            ...DEFAULT_PROGRESS.quizScores,
+            ...(progData.quizScores || {})
+          }
+        };
+        setProgress(mergedProg);
+        localStorage.setItem('aramaic_progress', JSON.stringify(mergedProg));
+      } else {
+        if (user && user.role === 'member') {
+          const initialProgUser = {
+            ...DEFAULT_PROGRESS,
+            memberId: user.id
+          };
+          setProgress(initialProgUser);
+          localStorage.setItem('aramaic_progress', JSON.stringify(initialProgUser));
+          try {
+            await setDoc(doc(db, 'progress', user.id), initialProgUser);
+          } catch (e) {
+            console.warn("Gagal membuat dokumen progress di Firestore:", e);
+          }
+        }
       }
     }, (err) => {
       console.warn("Unsatisfied progress query: ", err);
@@ -487,7 +509,15 @@ export default function App() {
       try {
         const parsedProg = JSON.parse(cachedProgress);
         if (parsedProg.memberId === user.id) {
-          setProgress(parsedProg);
+          const mergedProg = {
+            ...DEFAULT_PROGRESS,
+            ...parsedProg,
+            quizScores: {
+              ...DEFAULT_PROGRESS.quizScores,
+              ...(parsedProg.quizScores || {})
+            }
+          };
+          setProgress(mergedProg);
         } else {
           const initialProgUser = {
             ...DEFAULT_PROGRESS,
@@ -738,7 +768,9 @@ export default function App() {
         }
         setUser(null);
         setIsOriginallyAdmin(false);
+        setProgress(DEFAULT_PROGRESS);
         localStorage.removeItem('aramaic_current_user');
+        localStorage.removeItem('aramaic_progress');
         localStorage.setItem('aramaic_original_user_is_admin', 'false');
         setConfirmModal(null);
         setAlertModal({
