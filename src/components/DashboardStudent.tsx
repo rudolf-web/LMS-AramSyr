@@ -970,8 +970,20 @@ export default function DashboardStudent({
               })
               .map((mat) => {
                 const absoluteIndex = materials.findIndex((m) => m.id === mat.id);
-                // All modules are unlocked and visible for registered students & admin, but demo users have access up to absoluteIndex 5
-                const isUnlocked = !isDemo || absoluteIndex < 5;
+                // Biarkan terkunci pada modul berikutnya jika modul sebelumnya belum lulus (skor >= 70%)
+                let isUnlocked = true;
+                if (absoluteIndex > 0) {
+                  const prevModule = materials[absoluteIndex - 1];
+                  const prevQuizScore = progress.quizScores[`module_quiz_${prevModule.id}`] || 0;
+                  const prevPassed = prevQuizScore >= 70;
+                  if (!prevPassed) {
+                    isUnlocked = false;
+                  }
+                }
+                // Akun demo dibatasi hingga absoluteIndex < 5
+                if (isDemo && absoluteIndex >= 5) {
+                  isUnlocked = false;
+                }
                 const isCompleted = progress.completedMaterials.includes(mat.id);
                 const quizScore = progress.quizScores[`module_quiz_${mat.id}`] || 0;
                 const isPassed = quizScore >= 70;

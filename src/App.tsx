@@ -68,13 +68,34 @@ export default function App() {
   const [adminLoginError, setAdminLoginError] = useState('');
   const [isLoggingInAdmin, setIsLoggingInAdmin] = useState(false);
 
+  // Helper to sort materials list numerically by ID (e.g., mat_1, mat_2, ..., mat_50)
+  const sortMaterialsList = (mats: Material[]): Material[] => {
+    return [...mats].sort((a, b) => {
+      const numA = parseInt(a.id.replace('mat_', ''), 10);
+      const numB = parseInt(b.id.replace('mat_', ''), 10);
+      if (!isNaN(numA) && !isNaN(numB)) {
+        return numA - numB;
+      }
+      return a.id.localeCompare(b.id);
+    });
+  };
+
   // Curriculum & Task States
   const [materials, setMaterials] = useState<Material[]>(() => {
     try {
       const cached = localStorage.getItem('aramaic_materials');
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return [...parsed].sort((a, b) => {
+            const numA = parseInt(a.id.replace('mat_', ''), 10);
+            const numB = parseInt(b.id.replace('mat_', ''), 10);
+            if (!isNaN(numA) && !isNaN(numB)) {
+              return numA - numB;
+            }
+            return a.id.localeCompare(b.id);
+          });
+        }
       }
     } catch (e) {}
     return INITIAL_MATERIALS;
@@ -362,8 +383,9 @@ export default function App() {
         list.push(doc.data() as Material);
       });
       if (list.length > 0) {
-        setMaterials(list);
-        localStorage.setItem('aramaic_materials', JSON.stringify(list));
+        const sortedList = sortMaterialsList(list);
+        setMaterials(sortedList);
+        localStorage.setItem('aramaic_materials', JSON.stringify(sortedList));
       }
     }, (err) => {
       console.warn("Unsatisfied materials rules: ", err);
@@ -494,8 +516,9 @@ export default function App() {
 
   // Update cached states storage
   const updateCachedMaterials = async (newMats: Material[]) => {
-    setMaterials(newMats);
-    localStorage.setItem('aramaic_materials', JSON.stringify(newMats));
+    const sorted = sortMaterialsList(newMats);
+    setMaterials(sorted);
+    localStorage.setItem('aramaic_materials', JSON.stringify(sorted));
   };
 
   const updateCachedSubmissions = async (newSubs: Submission[]) => {
@@ -575,9 +598,9 @@ export default function App() {
 
   // CALLBACKS FOR ADMIN ACTIONS:
   const handleAddMaterial = async (newMat: Material) => {
-    const updated = [...materials, newMat];
-    setMaterials(updated);
-    localStorage.setItem('aramaic_materials', JSON.stringify(updated));
+    const sorted = sortMaterialsList([...materials, newMat]);
+    setMaterials(sorted);
+    localStorage.setItem('aramaic_materials', JSON.stringify(sorted));
     try {
       await setDoc(doc(db, 'materials', newMat.id), newMat);
     } catch (err) {
@@ -586,9 +609,9 @@ export default function App() {
   };
 
   const handleEditMaterial = async (editedMat: Material) => {
-    const updated = materials.map(m => m.id === editedMat.id ? editedMat : m);
-    setMaterials(updated);
-    localStorage.setItem('aramaic_materials', JSON.stringify(updated));
+    const sorted = sortMaterialsList(materials.map(m => m.id === editedMat.id ? editedMat : m));
+    setMaterials(sorted);
+    localStorage.setItem('aramaic_materials', JSON.stringify(sorted));
     try {
       await setDoc(doc(db, 'materials', editedMat.id), editedMat);
     } catch (err) {
@@ -597,9 +620,9 @@ export default function App() {
   };
 
   const handleDeleteMaterial = async (materialId: string) => {
-    const updated = materials.filter(m => m.id !== materialId);
-    setMaterials(updated);
-    localStorage.setItem('aramaic_materials', JSON.stringify(updated));
+    const sorted = sortMaterialsList(materials.filter(m => m.id !== materialId));
+    setMaterials(sorted);
+    localStorage.setItem('aramaic_materials', JSON.stringify(sorted));
     try {
       await deleteDoc(doc(db, 'materials', materialId));
     } catch (err) {
